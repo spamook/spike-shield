@@ -127,7 +127,7 @@ We run the whole demo on one laptop, with no Lovable and no cloud.
 
 ```
 ┌─────────────────────────────────────────┐  loads  ┌─────────────────────────┐
-│ Browser (visitor, or Playwright)        │────────▶│ Fake App (vite preview) │
+│ Browser (visitor)                       │────────▶│ Fake App (vite preview) │
 └──┬────────────────────────────────┬─────┘         │  :4173                  │
    │ shield.js, admit, heartbeat    │ admitted only └─────────────────────────┘
    ▼                                ▼
