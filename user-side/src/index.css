@@ -37,3 +37,5 @@ button {
   color: #fff; background: linear-gradient(90deg, #ff6a00, #ee0979); cursor: pointer;
 }
 button:disabled { opacity: 0.6; cursor: wait; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
+.pager button { margin-top: 0; }
