@@ -31,11 +31,22 @@ export default function Idea() {
       .then(({ count }) => {
         if (!cancelled) setVotes(count ?? 0);
       });
+    // fix/ai: show the saved roast if this idea was roasted before.
+    supabase
+      .from("roasts")
+      .select("roast")
+      .eq("post_id", postId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setRoast(data?.roast ?? null);
+      });
     return () => {
       cancelled = true;
     };
   }, [postId]);
 
+  // fix/ai: ai-summary is called only here, on click. It saves the result in the roasts table,
+  // so the next call for this idea returns the saved roast without the AI latency.
   async function roastIt() {
     setRoasting(true);
     const { data, error } = await supabase.functions.invoke("ai-summary", {
@@ -59,10 +70,13 @@ export default function Idea() {
         ▲ {votes ?? "–"} votes
       </p>
       <p className="body">{post.body}</p>
-      <button onClick={roastIt} disabled={roasting}>
-        {roasting ? "Roasting…" : "Roast this idea"}
-      </button>
-      {roast && <blockquote className="roast">{roast}</blockquote>}
+      {roast ? (
+        <blockquote className="roast">{roast}</blockquote>
+      ) : (
+        <button onClick={roastIt} disabled={roasting}>
+          {roasting ? "Roasting…" : "Roast this idea"}
+        </button>
+      )}
     </article>
   );
 }
