@@ -4,58 +4,117 @@ How we split the work so both sides can build in parallel. See [spike-shield.md]
 
 ## Roles
 
-| | Tester side (Koki) | Fake App side (Danila) |
+| | Tester side (Koki) | Target side (Danila) |
 |---|---|---|
-| Lovable account | Spike Test Service | Fake App |
-| Builds | URL input, Dashboard, Backend, Results DB | Fake App, Target DB, Shield |
-| Demo role | Runs the check and shows the score | Turns on the Shield |
+| Builds | Backend: check, admit service, dashboard | Fake App, local Supabase, shield.js (script + waiting page) |
+| Demo role | Runs the check, shows the score and Shield stats | Installs the Shield, shows the app and Supabase Studio |
+
+Work spec for the Target side: [fakeapp-scripts-work.md](fakeapp-scripts-work.md).
+
+## Setup
+
+We each build on our own laptop. The demo runs on one laptop (Koki's), so the Target side must start from the repo with a few commands (see the Target spec).
+
+The repo is split into the customer's side and ours. It's a demo, so neither side copies the real product's infrastructure.
+
+```
+spike-shield/
+├─ user-side/            # Danila: the customer's app
+│  ├─ supabase/          # config, migrations, seed, functions (Supabase CLI, runs in Docker)
+│  ├─ src/, index.html   # Fake App (Vite + React)
+│  └─ scripts/           # start.sh, cap.sh
+└─ our-side/            # Koki: Spike Shield
+   ├─ src/               # one Node process: dashboard, check, admit API
+   ├─ public/shield.js   # built by Danila, served by our-side
+   └─ package.json       # npm start
+```
+
+Run the demo:
+
+```bash
+./user-side/scripts/start.sh    # Supabase + caps + Fake App on :4173
+cd our-side && npm start        # Backend on :8080
+```
+
+- Only Supabase runs in Docker. Our side runs directly on the laptop, so `localhost` works everywhere.
+
+| Service | Port |
+|---|---|
+| Fake App (`vite preview`) | 4173 |
+| Supabase API (REST, RPC, Edge Functions) | 54321 |
+| Supabase Studio | 54323 |
+| Backend (dashboard, check, admit service, `shield.js`) | 8080 |
+
+- The load generator and Supabase share the same CPU. Keep the Supabase caps tight so Supabase breaks first, not the Backend. The Backend's own per-call latency is the check: if the admit service gets slow, the caps are too loose.
+- Close other heavy apps during the demo.
 
 ## Tester side
 
-- Spike Test Service (Lovable): URL input page, Dashboard showing score, breaking point, cost estimate and fix prompts.
-- Backend (own server), in three steps:
-  1. Analyze and record: scan the JS bundle for every Supabase call the app can make (tables, RPCs, Edge Functions), then open the Fake App once in a headless browser (e.g. Playwright) and log the calls that actually run.
-  2. Replay: send that journey as many virtual users over plain HTTP.
-  3. Diagnose: errors and response times per call, so we can name the weak call (e.g. "`posts` query fails first at about 60 users").
-- Results go to the Results DB.
-- Results DB (Supabase of the Spike Test Service): jobs and results tables.
-- Fix prompts: turn test results into prompts to paste into Lovable. Can be fixed templates for the demo.
+One Node/TypeScript process on port 8080. SQLite for results, sites and the waitlist.
 
-## Fake App side
+### Check
 
-- Fake App (Lovable): a simple app that breaks easily, e.g. a feed page that runs heavy queries on every load, plus one AI call.
-- Target DB (its own Supabase project, not Lovable Cloud, so we can show errors live in the Supabase dashboard).
-- Shield: the queue and waiting page with email capture, installed by one prompt. We keep that prompt as the demo script.
+1. Analyze
+   - Fetch the page, find `<script>` tags, download the JS bundle.
+   - Extract the Supabase URL and anon key (the URL pattern and the JWT-shaped key).
+   - List call patterns: `.from('...')`, `.select(...)`, `.rpc('...')`, `functions.invoke('...')`.
+2. Record
+   - Open the app once with Playwright and log every request to the Supabase URL and to our admit service: method, path, query, body, response size, time.
+   - The recorded list is the journey. Fallback: the hand-written journey from the Target side.
+3. Replay
+   - Ramp virtual users (e.g. 10 → 300 over 60 seconds). Each one runs the journey once, then stays on the page for 30 seconds.
+   - If the journey starts with an admit call, follow the answer: admitted users run the rest and send heartbeats every 10 seconds; queued users retry every 5 seconds.
+   - Record status, latency and errors per call, bucketed by the number of active virtual users.
+4. Diagnose
+   - Breaking point: the user count where the error rate goes above 5% or p95 latency above 3 seconds.
+   - Weakest call: the call that crosses those limits first.
+   - Code smells from steps 1 and 2: `select *` without a limit, the same call repeated per list item, Edge Function calls on page load.
+   - Score (0–100): breaking point against a target of 500 users, minus points per code smell.
+   - Cost estimate (simplified): requests per visitor × expected spike size × a fixed price per request.
+   - Fix prompts: fixed templates matched to each finding (see Fix prompts in the Target spec).
 
-## What the Shield is
+### Admit service
 
-Not middleware. A Lovable app has no server in front of the page, so the Shield is:
+Keeps an in-memory map per site: session id → status, first seen, last seen.
 
-- A gate component in the app. On load it asks the admit function whether the visitor can enter. If not, it shows the waiting page and asks again every few seconds.
-- An admit database function (`shield_admit`, called as RPC) in the Target DB that counts active visitors (a table with a heartbeat) and returns admitted or queued.
+- On each admit call, drop sessions not seen for 30 seconds, then:
+  - Shield disabled for this site → admitted.
+  - Known active session → update last seen, admitted.
+  - Active count + queued visitors ahead of this one < threshold → mark active, admitted.
+  - Otherwise → queued, with position.
+- First come, first served: queued sessions keep their place as long as they keep polling.
+- Node runs one thread, so no locks are needed.
+- Send CORS headers, since the Fake App runs on a different origin.
+- Serve `shield.js` (built by the Target side) as a static file.
 
-This is why it can be installed with one prompt. A real proxy in front of the app (e.g. a Cloudflare Worker) would need a custom domain and is out of scope.
+### Dashboard
 
-Limit: the gate only stops visitors who come through the page. Someone calling Supabase directly skips it. Our test still goes through it, because the recorded journey includes the admit call.
+Served by the Backend.
+
+- Check page: URL input, progress, then score, breaking point, per-call table, code smells, fix prompts.
+- Shield page: on/off per site, threshold (pre-filled from the last check's breaking point), live active visitors, queue length, emails captured.
+- Updates every 1–2 seconds.
 
 ## Contract between the two sides
 
 Agree on these first, then build independently.
 
-1. Fake App URL and its Supabase URL + anon key. Shared by hand at first; reading them from the JS bundle comes later.
-2. Virtual user journey: recorded automatically from the page. The Fake App side writes down the calls the page should make, so the Tester side can check the recording and use it as a fallback, e.g.
-   - `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200` (feed)
-   - `HEAD /rest/v1/votes?post_id=eq.<id>` × 20 (vote counts)
-   - `POST /functions/v1/ai-summary` (AI call)
-3. Admit API (when the Shield is on):
-   - `POST /rest/v1/rpc/shield_admit` with `{ "p_session": "<uuid>" }` → `{ "status": "admitted" | "queued", "position": 42 }`. Each virtual user uses its own uuid, and admitted users call it again every 10s as a heartbeat.
-   - The replay must follow the response: admitted users run the rest of the journey, queued users wait and retry.
-4. Shield on/off switch the Fake App side can flip during the demo.
+1. Addresses: Fake App URL, Supabase URL and anon key. Shared by hand at first; the check reads them from the bundle later.
+2. Journey: the calls one visitor makes, recorded automatically. The Target side also writes them down as a fallback and to check the recording against.
+3. Site id: `idea-roaster`.
+4. Admit API (Tester side serves, `shield.js` calls):
+   - `POST http://localhost:8080/shield/admit` with `{ "siteId": "idea-roaster", "sessionId": "<uuid>" }`
+   - → `{ "status": "admitted" }` or `{ "status": "queued", "position": 42 }`
+   - Called on page load, then every 10 seconds while admitted (heartbeat) and every 5 seconds while queued.
+5. Waitlist API:
+   - `POST http://localhost:8080/shield/waitlist` with `{ "siteId": "idea-roaster", "sessionId": "<uuid>", "email": "..." }` → `204`
+6. Script: served at `http://localhost:8080/shield.js`, loaded by the Fake App with `<script src="http://localhost:8080/shield.js" data-site="idea-roaster" data-api="http://localhost:8080"></script>`.
+7. Shield on/off and the threshold live in the Tester dashboard.
 
 ## Demo script
 
-1. Paste the Fake App URL, run the check: bad score, "breaks at about N users".
+1. Paste the Fake App URL and run the check: bad score, "breaks at about N users, the feed query fails first". Show errors in Supabase Studio.
 2. Show the fix prompts.
-3. Turn on the Shield by pasting one prompt into Lovable.
-4. Spike again: waiting page appears, app stays up, emails captured.
+3. Show the Shield install prompt, then switch the Fake App to the `shield` branch. Turn the Shield on in the dashboard; the threshold is filled in from the check.
+4. Spike again: the waiting page appears, the app stays up, active visitors stay at the threshold, emails are captured.
 5. Re-check: good score.
