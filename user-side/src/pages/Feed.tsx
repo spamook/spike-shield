@@ -3,11 +3,12 @@ import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import type { Post } from "../types";
 
-const VOTE_COUNT_POSTS = 20;
+// fix/votes: the posts_with_votes view returns each post with its vote count in one query
+// (supabase/migrations/20260926000001_votes_view.sql), and votes(post_id) is indexed.
+type PostWithVotes = Post & { vote_count: number };
 
 export default function Feed() {
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [votes, setVotes] = useState<Record<number, number>>({});
+  const [posts, setPosts] = useState<PostWithVotes[]>([]);
   const [roast, setRoast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -16,10 +17,9 @@ export default function Feed() {
     let cancelled = false;
 
     async function load() {
-      // Weak point 1: heavy feed query. 200 posts at once, select * (includes the long body),
-      // joined with the author, ordered by created_at, which has no index.
+      // Weak point 1 (still here): 200 posts at once with the long body, ordered without an index.
       const { data, error } = await supabase
-        .from("posts")
+        .from("posts_with_votes")
         .select("*, author:profiles(*)")
         .order("created_at", { ascending: false })
         .limit(200);
@@ -29,24 +29,11 @@ export default function Feed() {
         setLoading(false);
         return;
       }
-      const list = (data ?? []) as Post[];
+      const list = (data ?? []) as PostWithVotes[];
       setPosts(list);
       setLoading(false);
 
-      // Weak point 2: N+1 vote counts. One request per post; votes.post_id has no index,
-      // so every count scans the whole votes table.
-      for (const post of list.slice(0, VOTE_COUNT_POSTS)) {
-        supabase
-          .from("votes")
-          .select("*", { count: "exact", head: true })
-          .eq("post_id", post.id)
-          .then(({ count }) => {
-            if (!cancelled) setVotes((v) => ({ ...v, [post.id]: count ?? 0 }));
-          });
-      }
-
-      // Weak point 3: AI call on every page load. The "Idea of the day" card asks the
-      // ai-summary Edge Function for a roast on every feed load, with no cache.
+      // Weak point 3 (still here): AI call on every page load.
       const ideaOfTheDay = list[0];
       if (ideaOfTheDay) {
         supabase.functions
@@ -87,7 +74,7 @@ export default function Feed() {
         {posts.map((post) => (
           <li key={post.id} className="card">
             <div className="votes" title="votes">
-              ▲ {votes[post.id] ?? "–"}
+              ▲ {post.vote_count}
             </div>
             <div>
               <h3>
