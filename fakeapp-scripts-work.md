@@ -8,10 +8,9 @@ Build a copy of a typical Lovable app that breaks under a small spike for clear 
 
 What you hand to the Tester side:
 
-- Fake App URL, Supabase URL and anon key
-- The list of calls the page makes (see Journey)
-- The Shield service on `localhost:8090`, matching the admit, waitlist and control APIs in team-plan
-- Fix branches that each remove one weak point (see Fix prompts)
+- The Fake App served twice: without the Shield on `:4173`, with the Shield on `:4174`
+- Page states on `<body data-state>` (see Page states), so the rush tester can tell what a visitor sees
+- The Shield service on `localhost:8090`, matching the admit, leave and stats APIs in team-plan
 
 ## Your folders
 
@@ -21,12 +20,12 @@ spike-shield/
 │  ├─ supabase/              # config, migrations, seed, functions
 │  ├─ src/, index.html       # Fake App (Vite + React)
 │  ├─ shield/                # Shield service (its own package.json)
-│  │  ├─ server.ts           # admit, waitlist, config, stats, serves public/
+│  │  ├─ server.ts           # admit, leave, config, stats, serves public/
 │  │  ├─ admit.ts            # admit logic (in memory)
 │  │  └─ public/shield.js    # the script the Fake App loads
 │  ├─ scripts/start.sh       # starts everything on this side
 │  └─ scripts/cap.sh         # Docker resource caps
-└─ service-side/             # Koki's: check, load, dashboard
+└─ tester/                   # Koki's: rush tester and its dashboard
 ```
 
 Only Supabase runs in Docker (the CLI needs it). The Fake App runs directly with `vite preview`, the Shield service with `tsx`.
@@ -83,10 +82,13 @@ npm install -D tsx typescript @types/express
   );
   ```
 
-- Serve the production build, like Lovable's CDN does:
+- Serve the production build, like Lovable's CDN does. Two builds from the same code, one without and one with the Shield (see Two builds):
 
   ```bash
-  npm run build && npx vite preview --port 4173
+  npm run build -- --outDir dist-plain
+  SHIELD=1 npm run build -- --outDir dist-shield
+  npx vite preview --outDir dist-plain --port 4173 &
+  npx vite preview --outDir dist-shield --port 4174
   ```
 
 - Check that the API answers:
@@ -97,7 +99,10 @@ npm install -D tsx typescript @types/express
 
 ## Resource caps
 
-A laptop is much stronger than a free-tier Supabase, and in the demo the load generator runs on the same laptop. Cap the containers so Supabase breaks first, at a predictable point (aim for 80–150 users).
+A laptop is much stronger than a free-tier Supabase, and in the demo the rush tester's browsers run on the same laptop. Real browsers are heavy, so the tester can only run a limited number of visitors (Koki measures it first, e.g. 60). Cap the containers so that:
+
+- The app breaks at about 20–30 visitors at the same time, run after run.
+- The app stays healthy at the Shield threshold (10).
 
 ```bash
 docker ps --format "{{.Names}}"          # find supabase_db_*, supabase_rest_*, supabase_edge_runtime_*
@@ -107,7 +112,7 @@ docker update --cpus 0.5 --memory 512m supabase_rest_user-side
 
 - Container names end with the `project_id` from `supabase/config.toml`. Check them with `docker ps`.
 - Caps reset when Supabase restarts. Keep the commands in `user-side/scripts/cap.sh`; `start.sh` runs it after `supabase start`.
-- Tune the numbers with the k6 script below until the breaking point is stable across runs.
+- Tune the numbers roughly with the k6 script below, then with the rush tester, until the breaking point is stable across runs.
 - Tune them on the demo laptop, not only on yours. A different CPU gives a different breaking point.
 
 ## Run on the demo laptop
@@ -121,8 +126,12 @@ cd "$(dirname "$0")/.."    # user-side/
 supabase start
 supabase db reset          # schema + seed
 ./scripts/cap.sh           # resource caps
-(cd shield && npm install && npm start) &   # Shield service on :8090
-npm install && npm run build && npx vite preview --port 4173
+(cd shield && npm install && THRESHOLD=10 npm start) &   # Shield service on :8090
+npm install
+npm run build -- --outDir dist-plain
+SHIELD=1 npm run build -- --outDir dist-shield
+npx vite preview --outDir dist-plain --port 4173 &     # without the Shield
+npx vite preview --outDir dist-shield --port 4174      # with the Shield
 ```
 
 Koki runs it with `./user-side/scripts/start.sh` (Git Bash on Windows).
@@ -207,7 +216,17 @@ Each one is a common vibe-coded mistake, and each one maps to a fix prompt. Buil
 3. AI call on every page load
    - The "Idea of the day" card calls the `ai-summary` Edge Function on every feed load, with no cache.
 
-If the app does not break under about 150 users, tighten the resource caps first, then make weak point 2 heavier (more posts with counts).
+If the app does not break at the planned number of users, tighten the resource caps first, then make weak point 2 heavier (more posts with counts).
+
+## Page states
+
+The rush tester reads what each visitor sees from the page. Set `data-state` on `<body>`:
+
+- `loading`: the app is starting or waiting for the feed
+- `ready`: the feed rendered with data
+- `error`: a Supabase call failed; show a visible error message too (e.g. "Something went wrong"), so the audience sees it
+
+The waiting page from `shield.js` has `id="spike-shield"`, which the tester checks first.
 
 ## Edge Function: ai-summary
 
@@ -233,18 +252,6 @@ Deno.serve(async (req) => {
 
 If `supabase start` doesn't pick it up, run `supabase functions serve`.
 
-## Journey
-
-The calls one visitor makes on the feed, in order. Write down the real list after building (browser Network tab) and send it to the Tester side.
-
-1. `GET http://localhost:4173/` (the page)
-2. `POST http://localhost:8090/shield/admit` (only on the `shield` branch)
-3. `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200`
-4. `HEAD /rest/v1/votes?post_id=eq.<id>` × 20, all sent at the same moment (note in the list which calls go out together)
-5. `POST /functions/v1/ai-summary`
-
-Supabase calls need headers `apikey: <anon key>` and `Authorization: Bearer <anon key>`.
-
 ## Shield script (shield.js)
 
 A plain JavaScript file, no build step. It lives in the repo at `user-side/shield/public/shield.js`, and the Shield service serves it at `http://localhost:8090/shield.js`, the way our CDN would in the real product.
@@ -254,10 +261,13 @@ What it does:
 1. Runs before the app's bundle.
 2. Asks our admit service whether this visitor can enter.
 3. Admitted: lets the app start, then sends a heartbeat every 10 seconds.
-4. Queued: shows a full-screen waiting page with the position and an email form, retries every 5 seconds, and lets the app start once admitted.
-5. Our service unreachable or slower than 2 seconds: lets the app start (fail open), so we never make the customer's app worse.
+4. Queued: shows a full-screen waiting page with the position, retries every 5 seconds, and lets the app start once admitted.
+5. Page closed: tells our service the visitor left, so their slot or place in line frees at once.
+6. Our service unreachable or slower than 2 seconds: lets the app start (fail open), so we never make the customer's app worse.
 
 The app's own code never runs for a queued visitor, so the database never sees them.
+
+No email form in the demo. In the pitch we say it's coming: leave an email on the waiting page, get "you're in" when a slot frees up (see Stretch in team-plan).
 
 ### Install in the app
 
@@ -333,6 +343,12 @@ If `shield.js` fails to load, `SpikeShield` is undefined and the app starts norm
     });
   }
 
+  // Leaving frees the slot at once instead of after 30 seconds.
+  // A plain string is sent as text/plain, which needs no CORS preflight.
+  window.addEventListener("pagehide", function () {
+    navigator.sendBeacon(api + "/shield/leave", JSON.stringify({ siteId: site, sessionId: sessionId }));
+  });
+
   // Waiting page: inline styles only, no requests except our API.
   var page;
   function showWaitingPage(position) {
@@ -345,27 +361,10 @@ If `shield.js` fails to load, `SpikeShield` is undefined and the app starts norm
       page.innerHTML =
         '<div style="max-width:360px;padding:24px;text-align:center">' +
         "<h1 style=\"font-size:22px\">This app is very popular right now</h1>" +
-        '<p>You\'re number <strong id="ss-pos"></strong> in line. This page will let you in automatically.</p>' +
-        '<form id="ss-form" style="margin-top:16px">' +
-        '<p>Or leave your email and we\'ll tell you when you\'re in.</p>' +
-        '<input id="ss-email" type="email" required placeholder="you@example.com" style="padding:8px;width:100%">' +
-        '<button style="margin-top:8px;padding:8px 16px">Notify me</button>' +
-        '<p style="font-size:12px;color:#666">We only use your email to tell you when you can get in.</p>' +
-        "</form></div>";
+        '<p>You\'re number <strong id="ss-pos"></strong> in line.</p>' +
+        "<p>Keep this tab open. We'll let you in automatically.</p>" +
+        "</div>";
       (document.body || document.documentElement).appendChild(page);
-      page.querySelector("#ss-form").addEventListener("submit", function (e) {
-        e.preventDefault();
-        fetch(api + "/shield/waitlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            siteId: site,
-            sessionId: sessionId,
-            email: page.querySelector("#ss-email").value,
-          }),
-        });
-        page.querySelector("#ss-form").innerHTML = "<p>Thanks! We'll email you when you're in.</p>";
-      });
     }
     page.querySelector("#ss-pos").textContent = position;
   }
@@ -378,39 +377,66 @@ If `shield.js` fails to load, `SpikeShield` is undefined and the app starts norm
 })();
 ```
 
-The script runs in `<head>`, before `<body>` exists. The waiting page is added to `document.documentElement` in that case, which still covers the screen.
+- The script runs in `<head>`, before `<body>` exists. The waiting page is added to `document.documentElement` in that case, which still covers the screen.
+- A reload also sends "leave", so the visitor goes to the back of the line. Don't reload while demoing the waiting page.
 
 ### Install prompt
 
-Our product claim is "one prompt in Lovable". We can't run Lovable at the demo, so we show the prompt and switch to a `shield` branch that has it applied. Apply the prompt with any AI coding tool to make that branch, and fix the prompt until it works in one go:
+Our product claim is "one prompt in Lovable". We can't run Lovable at the demo, so in step 4 of the demo we show the prompt and the two changes it makes, then run the tester against the `:4174` build. Try the prompt once with any AI coding tool and fix it until it works in one go:
 
 > Add Spike Shield to this app. In index.html, inside `<head>` and before any other script, add `<script src="http://localhost:8090/shield.js" data-site="idea-roaster" data-api="http://localhost:8090"></script>` without async or defer. In src/main.tsx, wait for `window.SpikeShield?.ready` (use `Promise.resolve()` if it is undefined) before calling createRoot().render.
 
+### Two builds
+
+The demo serves the app without and with the Shield at the same time, so nothing is switched or rebuilt live.
+
+- `src/main.tsx` always waits for `SpikeShield.ready`. Without the script it starts at once, so both builds share it.
+- The script tag is added only when `SHIELD=1`, with a small plugin in `vite.config.ts`:
+
+  ```ts
+  const shieldTag =
+    '<script src="http://localhost:8090/shield.js" data-site="idea-roaster" data-api="http://localhost:8090"></script>';
+
+  export default defineConfig({
+    plugins: [
+      react(),
+      {
+        name: "spike-shield",
+        transformIndexHtml: (html) =>
+          process.env.SHIELD === "1" ? html.replace("<head>", `<head>\n    ${shieldTag}`) : html,
+      },
+    ],
+  });
+  ```
+
+- Check both: `:4173` has no `shield.js` in the page source, `:4174` has it as the first script in `<head>`.
+
 ## Shield service
 
-`user-side/shield/`, one Node process on `localhost:8090`. It stands in for our hosted admit service and waitlist, so it runs outside Supabase and stays up when Supabase breaks. Rules and contract in team-plan.
+`user-side/shield/`, one Node process on `localhost:8090`. It stands in for our hosted admit service, so it runs outside Supabase and stays up when Supabase breaks. Rules and contract in team-plan.
 
 | Method | Path | Used by | What |
 |---|---|---|---|
 | GET | `/shield.js` | Fake App | Static file from `public/` |
-| POST | `/shield/admit` | `shield.js`, Tester replay | Admit or queue a visitor |
-| POST | `/shield/waitlist` | `shield.js` | Save an email for a queued visitor |
-| PUT | `/shield/config` | Tester Backend | Shield on/off and threshold |
-| GET | `/shield/stats` | Tester Backend | Active, queued, emails, notices |
+| POST | `/shield/admit` | `shield.js` | Admit or queue a visitor |
+| POST | `/shield/leave` | `shield.js` | Drop a visitor who closed the page |
+| PUT | `/shield/config` | us, for tuning | Shield on/off and threshold |
+| GET | `/shield/stats` | Tester dashboard | Active and queued visitors |
 
-- CORS on all routes (`Access-Control-Allow-Origin: *`, handle `OPTIONS`), since the Fake App runs on port 4173.
-- All state is in memory, no database. A restart clears it, which is fine for the demo. The real product keeps sessions in an edge store and emails in its own database.
-- Keep the admit call fast. Its latency is part of every page load, and the Tester side uses it to tell whether the caps leave enough CPU.
+- CORS on all routes (`Access-Control-Allow-Origin: *`, handle `OPTIONS`), since the Fake App runs on ports 4173 and 4174.
+- `/shield/leave` gets its body as `text/plain` (from `sendBeacon`). Parse both types: `express.json({ type: ["application/json", "text/plain"] })`.
+- Starts with `idea-roaster` enabled and the threshold from the `THRESHOLD` env var (default 10). Only the `:4174` build loads the script, so the Shield can stay on all the time.
+- All state is in memory, no database. A restart clears it, which is fine for the demo. The real product keeps sessions in an edge store.
+- Keep the admit call fast. Its latency is part of every page load.
 
 ```ts
 // shield/admit.ts
-type Session = { status: "active" | "queued"; firstSeen: number; lastSeen: number; email?: string };
+type Session = { status: "active" | "queued"; firstSeen: number; lastSeen: number };
 
 type Site = {
   enabled: boolean;
   threshold: number;
   sessions: Map<string, Session>;   // insertion order = arrival order
-  notices: string[];                // "you're in" emails we would send
 };
 
 const TTL_MS = 30_000;
@@ -419,7 +445,7 @@ export const sites = new Map<string, Site>();
 export function getSite(id: string): Site {
   let site = sites.get(id);
   if (!site) {
-    site = { enabled: false, threshold: 30, sessions: new Map(), notices: [] };
+    site = { enabled: true, threshold: Number(process.env.THRESHOLD ?? 10), sessions: new Map() };
     sites.set(id, site);
   }
   return site;
@@ -451,15 +477,13 @@ export function admit(siteId: string, sessionId: string, now = Date.now()) {
   // first come, first served: free slots must cover everyone ahead
   if (active + ahead < site.threshold) {
     s.status = "active";
-    if (s.email) site.notices.push(`You're in: ${s.email}`);
     return { status: "admitted" };
   }
   return { status: "queued", position: ahead + 1 };
 }
 
-export function saveEmail(siteId: string, sessionId: string, email: string) {
-  const s = getSite(siteId).sessions.get(sessionId);
-  if (s) s.email = email;
+export function leave(siteId: string, sessionId: string) {
+  getSite(siteId).sessions.delete(sessionId);
 }
 
 export function configure(siteId: string, enabled: boolean, threshold: number) {
@@ -470,31 +494,30 @@ export function configure(siteId: string, enabled: boolean, threshold: number) {
 
 export function stats(siteId: string) {
   const site = getSite(siteId);
-  let active = 0, queued = 0, emails = 0;
+  let active = 0, queued = 0;
   for (const s of site.sessions.values()) {
     if (s.status === "active") active++; else queued++;
-    if (s.email) emails++;
   }
-  return { enabled: site.enabled, threshold: site.threshold, active, queued, emails, notices: site.notices.slice(-10) };
+  return { enabled: site.enabled, threshold: site.threshold, active, queued };
 }
 ```
 
 - Each call scans all sessions. That's fine for a few thousand visitors in the demo.
-- In the demo we don't send real emails. The "you're in" notices show on the Tester dashboard instead.
 
 Test with curl:
 
 ```bash
 curl -X PUT localhost:8090/shield/config -H "content-type: application/json" -d '{"siteId":"idea-roaster","enabled":true,"threshold":2}'
 curl -X POST localhost:8090/shield/admit -H "content-type: application/json" -d '{"siteId":"idea-roaster","sessionId":"a"}'
+curl -X POST localhost:8090/shield/leave -H "content-type: text/plain" -d '{"siteId":"idea-roaster","sessionId":"a"}'
 curl "localhost:8090/shield/stats?siteId=idea-roaster"
 ```
 
-With threshold 2, the third new session is queued.
+With threshold 2, the third new session is queued. After a leave, the next queued session is admitted on its next retry.
 
-## Fix prompts
+## Fix prompts (stretch)
 
-The Tester dashboard shows these after a check. Apply each one with an AI coding tool on its own branch, and confirm with k6 that it removes the weak point.
+Only after the full demo runs. Not part of the demo flow. Apply each one with an AI coding tool on its own branch, and confirm with k6 that it removes the weak point.
 
 1. `fix/feed`, heavy feed query
    > Load the feed 20 posts at a time with pagination. Select only id, title, created_at and the author's username, not the post body. Add a database index on posts(created_at desc).
@@ -533,15 +556,15 @@ export default function () {
 }
 ```
 
-Expected: errors (5xx, timeouts) and p95 of several seconds at the target load. This script skips the Shield. Testing with the Shield is done by the Tester Backend's replay.
+Expected: errors (5xx, timeouts) and p95 of several seconds at the target load. k6 is lighter than a real browser, so use it only to tune the caps roughly, then confirm the numbers with the rush tester. This script skips the Shield. Testing with the Shield is done by the rush tester.
 
 ## Checklist
 
 1. Local Supabase running, schema and seed loaded
-2. Fake App built with the three weak points, served with `vite preview`
-3. IP, Fake App URL, Supabase URL, anon key sent to the Tester side
-4. Resource caps in `user-side/scripts/cap.sh`, `start.sh` works from a fresh clone, k6 shows a stable breaking point
-5. Journey list written from the Network tab and sent
-6. Shield service on :8090 matches the contract (curl test passes), and `shield.js` works against it: queued, waiting page, email sent, admitted
-7. `shield` branch made from the install prompt
-8. `fix/feed`, `fix/votes`, `fix/ai` branches made from the fix prompts and checked with k6
+2. Fake App built with the three weak points, served on `:4173` (no script) and `:4174` (with script)
+3. `data-state` on `<body>` and a visible error message when a Supabase call fails
+4. Resource caps in `user-side/scripts/cap.sh`, `start.sh` works from a fresh clone
+5. With the rush tester: the app breaks at a stable number of users, and stays healthy at the threshold
+6. Shield service on :8090 matches the contract (curl test passes), and `shield.js` works against it: queued, waiting page, admitted, and closing the tab frees the place at once
+7. Install prompt tried once with an AI coding tool and produces the same two changes
+8. Stretch: `fix/feed`, `fix/votes`, `fix/ai` branches made from the fix prompts and checked with k6
