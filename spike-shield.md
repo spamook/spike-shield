@@ -122,22 +122,26 @@ We run the whole demo on one laptop, with no Lovable and no cloud.
 
 - Fake App: a copy of a typical Lovable app. Same stack Lovable generates (Vite + React + supabase-js), served with `vite preview`.
 - Supabase: runs locally in Docker. CPU and memory are capped so it breaks at a predictable point, and so the load generator on the same laptop doesn't starve it.
-- Backend: one Node/TypeScript process that runs the check and the admit service, serves the dashboard and `shield.js`, and keeps results and the waitlist in SQLite. It stands in for everything on the right of the product diagram.
+- Shield service: a small Node/TypeScript process that serves `shield.js` and runs the admit service and the waitlist, all in memory. It stands in for the CDN and the edge admit service.
+- Backend: one Node/TypeScript process that runs the check and the load engine, serves the dashboard, and keeps check results in SQLite. It stands in for the rest of the right side of the product diagram.
 
 ```
 ┌─────────────────────────────────────────┐  loads  ┌─────────────────────────┐
 │ Browser (visitor, or Playwright)        │────────▶│ Fake App (vite preview) │
 └──┬────────────────────────────────┬─────┘         │  :4173                  │
-   │ admit, heartbeat               │ admitted only └─────────────────────────┘
+   │ shield.js, admit, heartbeat    │ admitted only └─────────────────────────┘
    ▼                                ▼
 ┌────────────────────┐        ┌─────────────────────────────┐
-│ Backend :8080      │        │ Supabase in Docker :54321   │
-│  dashboard         │─spike─▶│  capped CPU and memory      │
-│  shield.js         │        │  Postgres, REST, Functions  │
-│  check             │        └─────────────────────────────┘
-│  admit service     │
-│  SQLite            │
-└────────────────────┘
+│ Shield :8090       │        │ Supabase in Docker :54321   │
+│  shield.js         │        │  capped CPU and memory      │
+│  admit, waitlist   │        │  Postgres, REST, Functions  │
+│  in memory         │        └──────────────▲──────────────┘
+└─────────▲──────────┘                       │
+          │ config, stats, admit             │ spike
+┌─────────┴──────────────────────────────────┴───┐
+│ Backend :8080                                  │
+│  dashboard, check, load engine, SQLite         │
+└────────────────────────────────────────────────┘
 ```
 
 In the pitch: "We run a copy of a typical Lovable + Supabase app locally. The real product tests your live URL."

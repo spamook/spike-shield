@@ -1,32 +1,35 @@
-# Target Side: Fake App + Shield Script
+# Target Side: Fake App + Shield
 
-Work spec for the Target side. See [team-plan.md](team-plan.md) for roles, ports and the API contract, and [spike-shield.md](spike-shield.md) for the product.
+Work spec for the Target side (`user-side/`). See [team-plan.md](team-plan.md) for roles, ports and the API contract, and [spike-shield.md](spike-shield.md) for the product.
 
 ## Goal
 
-Build a copy of a typical Lovable app that breaks under a small spike for clear reasons, and the `shield.js` script that keeps it up.
+Build a copy of a typical Lovable app that breaks under a small spike for clear reasons, and the Shield (`shield.js` plus the admit service) that keeps it up.
 
 What you hand to the Tester side:
 
 - Fake App URL, Supabase URL and anon key
 - The list of calls the page makes (see Journey)
-- `shield.js` (committed to `our-side/public/`; the Tester Backend serves it)
+- The Shield service on `localhost:8090`, matching the admit, waitlist and control APIs in team-plan
 - Fix branches that each remove one weak point (see Fix prompts)
 
 ## Your folders
 
 ```
 spike-shield/
-├─ user-side/            # yours: Fake App + Supabase
-│  ├─ supabase/          # config, migrations, seed, functions
-│  ├─ src/, index.html   # Fake App (Vite + React)
-│  ├─ scripts/start.sh   # starts everything on this side
-│  └─ scripts/cap.sh     # Docker resource caps
-└─ our-side/
-   └─ public/shield.js   # yours too; the rest of our-side is Koki's
+├─ user-side/                # all yours
+│  ├─ supabase/              # config, migrations, seed, functions
+│  ├─ src/, index.html       # Fake App (Vite + React)
+│  ├─ shield/                # Shield service (its own package.json)
+│  │  ├─ server.ts           # admit, waitlist, config, stats, serves public/
+│  │  ├─ admit.ts            # admit logic (in memory)
+│  │  └─ public/shield.js    # the script the Fake App loads
+│  ├─ scripts/start.sh       # starts everything on this side
+│  └─ scripts/cap.sh         # Docker resource caps
+└─ service-side/             # Koki's: check, load, dashboard
 ```
 
-Only Supabase runs in Docker (the CLI needs it). The Fake App runs directly with `vite preview`.
+Only Supabase runs in Docker (the CLI needs it). The Fake App runs directly with `vite preview`, the Shield service with `tsx`.
 
 ## Stack
 
@@ -35,6 +38,11 @@ The same stack Lovable generates, run locally:
 - Vite + React + TypeScript
 - `@supabase/supabase-js`
 - Local Supabase in Docker (Postgres, REST API, Edge Functions, Studio)
+
+Shield service (stands in for our hosted service, so not Lovable's stack):
+
+- Node 20+, TypeScript run with `tsx` (no build step), Express
+- No database: everything in memory
 
 Prerequisites: Node 20+, Docker Desktop, Supabase CLI, git.
 
@@ -47,7 +55,15 @@ cd user-side
 npm install @supabase/supabase-js
 supabase init           # project_id in supabase/config.toml becomes "user-side"
 supabase start          # prints API URL, anon key, Studio URL
+
+# Shield service, its own package
+mkdir shield && cd shield
+npm init -y
+npm install express
+npm install -D tsx typescript @types/express
 ```
+
+- `shield/package.json`: `"start": "tsx server.ts"`.
 
 - Put the schema in `supabase/migrations/<timestamp>_init.sql` and the seed in `supabase/seed.sql`. `supabase db reset` applies both.
 - `.env`:
@@ -105,6 +121,7 @@ cd "$(dirname "$0")/.."    # user-side/
 supabase start
 supabase db reset          # schema + seed
 ./scripts/cap.sh           # resource caps
+(cd shield && npm install && npm start) &   # Shield service on :8090
 npm install && npm run build && npx vite preview --port 4173
 ```
 
@@ -220,7 +237,7 @@ If `supabase start` doesn't pick it up, run `supabase functions serve`.
 
 The calls one visitor makes on the feed, in order. Write down the real list after building (browser Network tab) and send it to the Tester side.
 
-1. `POST http://localhost:8080/shield/admit` (only on the `shield` branch)
+1. `POST http://localhost:8090/shield/admit` (only on the `shield` branch)
 2. `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200`
 3. `HEAD /rest/v1/votes?post_id=eq.<id>` × 20
 4. `POST /functions/v1/ai-summary`
@@ -229,7 +246,7 @@ Supabase calls need headers `apikey: <anon key>` and `Authorization: Bearer <ano
 
 ## Shield script (shield.js)
 
-A plain JavaScript file, no build step. It lives in the repo at `our-side/public/shield.js`, and the Tester Backend serves it at `http://localhost:8080/shield.js`, the way our CDN would in the real product.
+A plain JavaScript file, no build step. It lives in the repo at `user-side/shield/public/shield.js`, and the Shield service serves it at `http://localhost:8090/shield.js`, the way our CDN would in the real product.
 
 What it does:
 
@@ -249,9 +266,9 @@ Two changes. This is what the install prompt must produce.
 
 ```html
 <script
-  src="http://localhost:8080/shield.js"
+  src="http://localhost:8090/shield.js"
   data-site="idea-roaster"
-  data-api="http://localhost:8080"></script>
+  data-api="http://localhost:8090"></script>
 ```
 
 It must be a normal script (no `async` or `defer`). The Vite bundle is a module script, which the browser runs later, so `shield.js` always runs first.
@@ -366,7 +383,113 @@ The script runs in `<head>`, before `<body>` exists. The waiting page is added t
 
 Our product claim is "one prompt in Lovable". We can't run Lovable at the demo, so we show the prompt and switch to a `shield` branch that has it applied. Apply the prompt with any AI coding tool to make that branch, and fix the prompt until it works in one go:
 
-> Add Spike Shield to this app. In index.html, inside `<head>` and before any other script, add `<script src="http://localhost:8080/shield.js" data-site="idea-roaster" data-api="http://localhost:8080"></script>` without async or defer. In src/main.tsx, wait for `window.SpikeShield?.ready` (use `Promise.resolve()` if it is undefined) before calling createRoot().render.
+> Add Spike Shield to this app. In index.html, inside `<head>` and before any other script, add `<script src="http://localhost:8090/shield.js" data-site="idea-roaster" data-api="http://localhost:8090"></script>` without async or defer. In src/main.tsx, wait for `window.SpikeShield?.ready` (use `Promise.resolve()` if it is undefined) before calling createRoot().render.
+
+## Shield service
+
+`user-side/shield/`, one Node process on `localhost:8090`. It stands in for our hosted admit service and waitlist, so it runs outside Supabase and stays up when Supabase breaks. Rules and contract in team-plan.
+
+| Method | Path | Used by | What |
+|---|---|---|---|
+| GET | `/shield.js` | Fake App | Static file from `public/` |
+| POST | `/shield/admit` | `shield.js`, Tester replay | Admit or queue a visitor |
+| POST | `/shield/waitlist` | `shield.js` | Save an email for a queued visitor |
+| PUT | `/shield/config` | Tester Backend | Shield on/off and threshold |
+| GET | `/shield/stats` | Tester Backend | Active, queued, emails, notices |
+
+- CORS on all routes (`Access-Control-Allow-Origin: *`, handle `OPTIONS`), since the Fake App runs on port 4173.
+- All state is in memory, no database. A restart clears it, which is fine for the demo. The real product keeps sessions in an edge store and emails in its own database.
+- Keep the admit call fast. Its latency is part of every page load, and the Tester side uses it to tell whether the caps leave enough CPU.
+
+```ts
+// shield/admit.ts
+type Session = { status: "active" | "queued"; firstSeen: number; lastSeen: number; email?: string };
+
+type Site = {
+  enabled: boolean;
+  threshold: number;
+  sessions: Map<string, Session>;   // insertion order = arrival order
+  notices: string[];                // "you're in" emails we would send
+};
+
+const TTL_MS = 30_000;
+export const sites = new Map<string, Site>();
+
+export function getSite(id: string): Site {
+  let site = sites.get(id);
+  if (!site) {
+    site = { enabled: false, threshold: 30, sessions: new Map(), notices: [] };
+    sites.set(id, site);
+  }
+  return site;
+}
+
+export function admit(siteId: string, sessionId: string, now = Date.now()) {
+  const site = getSite(siteId);
+  if (!site.enabled) return { status: "admitted" };
+
+  for (const [id, s] of site.sessions) {
+    if (now - s.lastSeen > TTL_MS) site.sessions.delete(id);
+  }
+
+  let s = site.sessions.get(sessionId);
+  if (!s) {
+    s = { status: "queued", firstSeen: now, lastSeen: now };
+    site.sessions.set(sessionId, s);
+  }
+  s.lastSeen = now;
+  if (s.status === "active") return { status: "admitted" };
+
+  let active = 0;
+  let ahead = 0;
+  for (const o of site.sessions.values()) {
+    if (o.status === "active") active++;
+    else if (o.firstSeen < s.firstSeen) ahead++;
+  }
+
+  // first come, first served: free slots must cover everyone ahead
+  if (active + ahead < site.threshold) {
+    s.status = "active";
+    if (s.email) site.notices.push(`You're in: ${s.email}`);
+    return { status: "admitted" };
+  }
+  return { status: "queued", position: ahead + 1 };
+}
+
+export function saveEmail(siteId: string, sessionId: string, email: string) {
+  const s = getSite(siteId).sessions.get(sessionId);
+  if (s) s.email = email;
+}
+
+export function configure(siteId: string, enabled: boolean, threshold: number) {
+  const site = getSite(siteId);
+  site.enabled = enabled;
+  site.threshold = threshold;
+}
+
+export function stats(siteId: string) {
+  const site = getSite(siteId);
+  let active = 0, queued = 0, emails = 0;
+  for (const s of site.sessions.values()) {
+    if (s.status === "active") active++; else queued++;
+    if (s.email) emails++;
+  }
+  return { enabled: site.enabled, threshold: site.threshold, active, queued, emails, notices: site.notices.slice(-10) };
+}
+```
+
+- Each call scans all sessions. That's fine for a few thousand visitors in the demo.
+- In the demo we don't send real emails. The "you're in" notices show on the Tester dashboard instead.
+
+Test with curl:
+
+```bash
+curl -X PUT localhost:8090/shield/config -H "content-type: application/json" -d '{"siteId":"idea-roaster","enabled":true,"threshold":2}'
+curl -X POST localhost:8090/shield/admit -H "content-type: application/json" -d '{"siteId":"idea-roaster","sessionId":"a"}'
+curl "localhost:8090/shield/stats?siteId=idea-roaster"
+```
+
+With threshold 2, the third new session is queued.
 
 ## Fix prompts
 
@@ -418,6 +541,6 @@ Expected: errors (5xx, timeouts) and p95 of several seconds at the target load. 
 3. IP, Fake App URL, Supabase URL, anon key sent to the Tester side
 4. Resource caps in `user-side/scripts/cap.sh`, `start.sh` works from a fresh clone, k6 shows a stable breaking point
 5. Journey list written from the Network tab and sent
-6. `shield.js` committed, works against the Tester's admit service: queued, waiting page, email sent, admitted
+6. Shield service on :8090 matches the contract (curl test passes), and `shield.js` works against it: queued, waiting page, email sent, admitted
 7. `shield` branch made from the install prompt
 8. `fix/feed`, `fix/votes`, `fix/ai` branches made from the fix prompts and checked with k6
