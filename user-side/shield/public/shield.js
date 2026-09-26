@@ -1,8 +1,8 @@
 /*
- * Spike Shield script. Served by the Backend at http://localhost:8080/shield.js (our CDN in the
+ * Spike Shield script. Served by the Shield service at http://localhost:8090/shield.js (our CDN in the
  * real product). Install in the customer's app, in <head>, before the app's own script:
  *
- *   <script src="http://localhost:8080/shield.js" data-site="idea-roaster" data-api="http://localhost:8080"></script>
+ *   <script src="http://localhost:8090/shield.js" data-site="idea-roaster" data-api="http://localhost:8090"></script>
  *
  * A normal script (no async or defer): the Vite bundle is a module script, which the browser runs
  * later, so this always runs first. The app waits for window.SpikeShield.ready before rendering.

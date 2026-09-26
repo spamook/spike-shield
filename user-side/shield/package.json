@@ -1,0 +1,18 @@
+{
+  "name": "shield",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Spike Shield service for the demo: serves shield.js, admit service and waitlist, all in memory",
+  "scripts": {
+    "start": "tsx server.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3"
+  }
+}

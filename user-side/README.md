@@ -1,8 +1,20 @@
-# user-side: Idea Roaster (Fake App + local Supabase)
+# user-side: Idea Roaster (Fake App + local Supabase) and the Shield service
 
 The customer's side of the demo: a copy of a typical Lovable app that breaks under a small spike
-for clear reasons. Spec: [fakeapp-scripts-work.md](../fakeapp-scripts-work.md). Roles, ports and
-the API contract: [team-plan.md](../team-plan.md).
+for clear reasons, plus the Shield service that keeps it up. Spec:
+[fakeapp-scripts-work.md](../fakeapp-scripts-work.md). Roles, ports and the API contract:
+[team-plan.md](../team-plan.md).
+
+```
+user-side/
+├─ supabase/          # config, migrations, seed, functions
+├─ src/, index.html   # Fake App (Vite + React)
+├─ shield/            # Shield service on :8090 (its own package.json, run with tsx)
+│  ├─ server.ts       # admit, waitlist, config, stats, serves public/
+│  ├─ admit.ts        # admit logic (in memory)
+│  └─ public/shield.js
+└─ scripts/           # start.sh, cap.sh, spike.js
+```
 
 ## Run
 
@@ -14,14 +26,18 @@ Prerequisites: Node 20+, Docker Desktop running, git. The Supabase CLI is a dev 
 ```
 
 It runs `npm install`, `supabase start`, `supabase db reset` (schema + seed, a minute or two),
-`scripts/cap.sh`, writes `.env` from the running instance, builds and serves the app.
+`scripts/cap.sh`, writes `.env` from the running instance, starts the Shield service in the
+background, builds and serves the app. Ctrl+C stops the app and the Shield service.
 
 | Service | URL |
 |---|---|
 | Fake App (`vite preview`) | http://localhost:4173 |
+| Shield service (`shield.js`, admit, waitlist, config, stats) | http://localhost:8090 |
 | Supabase API (REST, RPC, Edge Functions) | http://localhost:54321 |
 | Supabase Studio | http://localhost:54323 |
 | Site id | `idea-roaster` |
+
+To run only the Shield service: `cd user-side/shield && npm install && npm start`.
 
 Anon key (the local default, the same on every machine; `start.sh` re-reads it from
 `supabase status`):
@@ -68,7 +84,7 @@ The calls one visitor makes on the feed, in order, recorded from the built app's
 
 | # | Call | Notes |
 |---|---|---|
-| 0 | `POST http://localhost:8080/shield/admit` | `shield` branch only, before anything else |
+| 0 | `POST http://localhost:8090/shield/admit` | `shield` branch only, before anything else |
 | 1 | `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200` | ~300 KB response |
 | 2 | `HEAD /rest/v1/votes?select=*&post_id=eq.<id>` × 20 | header `Prefer: count=exact`, count comes back in `Content-Range` |
 | 3 | `POST /functions/v1/ai-summary` | body `{"post_id":<id of the newest post>}`, ~2 s |
@@ -97,11 +113,38 @@ vote counts (`VOTE_COUNT_POSTS` in `src/pages/Feed.tsx`).
 `supabase/config.toml` disables Realtime, Storage and Analytics to keep the Docker footprint small
 on the demo laptop; Studio stays on.
 
+## Shield service
+
+`shield/`, one Node process on `localhost:8090` (Express, run with `tsx`, no build step). It
+stands in for our CDN and hosted admit service: all state is in memory, a restart clears it.
+
+| Method | Path | Used by | What |
+|---|---|---|---|
+| GET | `/shield.js` | Fake App | Static file from `shield/public/` |
+| POST | `/shield/admit` | `shield.js`, Tester replay | `{ siteId, sessionId }` → `{ status: "admitted" }` or `{ status: "queued", position }` |
+| POST | `/shield/waitlist` | `shield.js` | `{ siteId, sessionId, email }` → `204` |
+| PUT | `/shield/config` | Tester Backend | `{ siteId, enabled, threshold }` → current stats |
+| GET | `/shield/stats?siteId=…` | Tester Backend | `{ enabled, threshold, active, queued, emails, notices }` |
+
+A new site starts disabled with threshold 30, so the Shield does nothing until the Tester
+dashboard turns it on. Sessions not seen for 30 s are dropped. "You're in" emails are not sent
+in the demo; they appear as `notices` in the stats.
+
+Contract test:
+
+```bash
+curl -X PUT localhost:8090/shield/config -H "content-type: application/json" -d '{"siteId":"idea-roaster","enabled":true,"threshold":2}'
+curl -X POST localhost:8090/shield/admit -H "content-type: application/json" -d '{"siteId":"idea-roaster","sessionId":"a"}'
+curl "localhost:8090/shield/stats?siteId=idea-roaster"
+```
+
+With threshold 2, the third new session is queued.
+
 ## Branches
 
 - `shield`: the Shield installed with the install prompt (script tag in `index.html`, `main.tsx`
-  waits for `window.SpikeShield.ready`). The script itself is `our-side/public/shield.js`, served
-  by the Backend at `http://localhost:8080/shield.js`.
+  waits for `window.SpikeShield.ready`). The script itself is `shield/public/shield.js`, served
+  by the Shield service at `http://localhost:8090/shield.js`.
 - `fix/feed`, `fix/votes`, `fix/ai`: each one applies one fix prompt from the spec and adds a
   migration. Switch with `git checkout <branch>`, then `npm run build` and, for the fix branches,
   `npx supabase db reset` to apply the new migration.

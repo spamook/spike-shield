@@ -21,8 +21,14 @@ if [ -n "${ANON_KEY:-}" ]; then
   printf 'VITE_SUPABASE_URL=http://localhost:54321\nVITE_SUPABASE_ANON_KEY=%s\n' "$ANON_KEY" > .env
 fi
 
+# Shield service (shield.js, admit, waitlist, config, stats) on :8090, in the background.
+# It stops together with this script.
+(cd shield && npm install && npm start) &
+trap 'kill 0' EXIT
+
 echo
 echo "Fake App:        http://localhost:4173"
+echo "Shield service:  http://localhost:8090"
 echo "Supabase API:    http://localhost:54321"
 echo "Supabase Studio: http://localhost:54323"
 echo
