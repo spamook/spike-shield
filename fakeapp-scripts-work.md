@@ -1,117 +1,23 @@
-# Target Side: Fake App + Shield Script
+# Fake App + Shield: Work Spec
 
-Work spec for the Target side. See [team-plan.md](team-plan.md) for roles, ports and the API contract, and [spike-shield.md](spike-shield.md) for the product.
+Work for the Fake App side. See [team-plan.md](team-plan.md) for roles and [spike-shield.md](spike-shield.md) for the product.
 
 ## Goal
 
-Build a copy of a typical Lovable app that breaks under a small spike for clear reasons, and the `shield.js` script that keeps it up.
+Build a Vite + React app with an AI coding agent (Claude Code or Cursor) that looks like a real vibe-coded app, breaks under a small spike for clear reasons, and stays up once the Shield is on.
 
-What you hand to the Tester side:
+What you hand back to the Tester side:
 
-- Fake App URL, Supabase URL and anon key
+- Fake App URL
+- Supabase URL and anon key
 - The list of calls the page makes (see Journey)
-- `shield.js` (committed to `our-side/public/`; the Tester Backend serves it)
-- Fix branches that each remove one weak point (see Fix prompts)
-
-## Your folders
-
-```
-spike-shield/
-├─ user-side/            # yours: Fake App + Supabase
-│  ├─ supabase/          # config, migrations, seed, functions
-│  ├─ src/, index.html   # Fake App (Vite + React)
-│  ├─ scripts/start.sh   # starts everything on this side
-│  └─ scripts/cap.sh     # Docker resource caps
-└─ our-side/
-   └─ public/shield.js   # yours too; the rest of our-side is Koki's
-```
-
-Only Supabase runs in Docker (the CLI needs it). The Fake App runs directly with `vite preview`.
-
-## Stack
-
-The same stack Lovable generates, run locally:
-
-- Vite + React + TypeScript
-- `@supabase/supabase-js`
-- Local Supabase in Docker (Postgres, REST API, Edge Functions, Studio)
-
-Prerequisites: Node 20+, Docker Desktop, Supabase CLI, git.
+- Fix prompts you have tested with the agent (see Fix prompts)
 
 ## Setup
 
-```bash
-# from the repo root
-npm create vite@latest user-side -- --template react-ts
-cd user-side
-npm install @supabase/supabase-js
-supabase init           # project_id in supabase/config.toml becomes "user-side"
-supabase start          # prints API URL, anon key, Studio URL
-```
-
-- Put the schema in `supabase/migrations/<timestamp>_init.sql` and the seed in `supabase/seed.sql`. `supabase db reset` applies both.
-- `.env`:
-
-  ```
-  VITE_SUPABASE_URL=http://localhost:54321
-  VITE_SUPABASE_ANON_KEY=<anon key from supabase start>
-  ```
-
-- `src/lib/supabase.ts`:
-
-  ```ts
-  import { createClient } from "@supabase/supabase-js";
-  export const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY,
-  );
-  ```
-
-- Serve the production build, like Lovable's CDN does:
-
-  ```bash
-  npm run build && npx vite preview --port 4173
-  ```
-
-- Check that the API answers:
-
-  ```bash
-  curl "http://localhost:54321/rest/v1/posts?limit=1" -H "apikey: <anon key>"
-  ```
-
-## Resource caps
-
-A laptop is much stronger than a free-tier Supabase, and in the demo the load generator runs on the same laptop. Cap the containers so Supabase breaks first, at a predictable point (aim for 80–150 users).
-
-```bash
-docker ps --format "{{.Names}}"          # find supabase_db_*, supabase_rest_*, supabase_edge_runtime_*
-docker update --cpus 1 --memory 1g supabase_db_user-side
-docker update --cpus 0.5 --memory 512m supabase_rest_user-side
-```
-
-- Container names end with the `project_id` from `supabase/config.toml`. Check them with `docker ps`.
-- Caps reset when Supabase restarts. Keep the commands in `user-side/scripts/cap.sh`; `start.sh` runs it after `supabase start`.
-- Tune the numbers with the k6 script below until the breaking point is stable across runs.
-- Tune them on the demo laptop, not only on yours. A different CPU gives a different breaking point.
-
-## Run on the demo laptop
-
-The demo runs on Koki's laptop, so everything must start from the repo without manual steps. Provide `user-side/scripts/start.sh`:
-
-```bash
-#!/usr/bin/env bash
-set -e
-cd "$(dirname "$0")/.."    # user-side/
-supabase start
-supabase db reset          # schema + seed
-./scripts/cap.sh           # resource caps
-npm install && npm run build && npx vite preview --port 4173
-```
-
-Koki runs it with `./user-side/scripts/start.sh` (Git Bash on Windows).
-
-- Local Supabase normally uses the same default anon key on every machine. Check that `supabase start` prints the same key on Koki's laptop; if so, `.env` can be committed.
-- Do a full run on Koki's laptop at least once before the demo day.
+1. Create a Supabase project on the free tier, so we can show errors and connections live in the Supabase dashboard during the demo.
+2. Create a Vite + React + TypeScript app with `@supabase/supabase-js` in a `fake-app/` folder of this repo. Put the Supabase URL and anon key in `fake-app/.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (don't commit `.env`).
+3. Deploy it to Vercel (`*.vercel.app`): import this repo, set the root directory to `fake-app`, add the two env vars. Add a rewrite of all paths to `/index.html` in `fake-app/vercel.json`, so `/idea/:id` and `/admin` work on refresh.
 
 ## App concept: Idea Roaster
 
@@ -121,10 +27,11 @@ Pages:
 
 - `/` Feed: list of ideas (title, author, vote count) and an "Idea of the day" card with an AI roast.
 - `/idea/:id` Detail: full idea text and a "Roast this idea" button.
+- `/admin` Hidden page with the Shield on/off switch (for the demo).
 
 ## Database
 
-`supabase/migrations/<timestamp>_init.sql`:
+Run in the Supabase SQL editor.
 
 ```sql
 create table profiles (
@@ -158,7 +65,7 @@ create policy "public read" on posts for select using (true);
 create policy "public read" on votes for select using (true);
 ```
 
-`supabase/seed.sql` (large enough that the missing indexes hurt):
+Seed data (large enough that the missing indexes hurt):
 
 ```sql
 insert into profiles (username)
@@ -190,11 +97,11 @@ Each one is a common vibe-coded mistake, and each one maps to a fix prompt. Buil
 3. AI call on every page load
    - The "Idea of the day" card calls the `ai-summary` Edge Function on every feed load, with no cache.
 
-If the app does not break under about 150 users, tighten the resource caps first, then make weak point 2 heavier (more posts with counts).
+If the free tier does not break under about 100 users, make weak point 2 heavier (more posts with counts), not the Shield weaker.
 
 ## Edge Function: ai-summary
 
-Simulates an LLM call, so load tests cost nothing.
+Simulates an LLM call so we don't pay for real AI during load tests. Deploy it with `supabase functions deploy ai-summary --no-verify-jwt` (or paste it into the Supabase dashboard editor and turn off Verify JWT), because the app calls it with the anon key, not a user token.
 
 ```ts
 // supabase/functions/ai-summary/index.ts
@@ -214,183 +121,208 @@ Deno.serve(async (req) => {
 });
 ```
 
-If `supabase start` doesn't pick it up, run `supabase functions serve`.
-
 ## Journey
 
-The calls one visitor makes on the feed, in order. Write down the real list after building (browser Network tab) and send it to the Tester side.
+The calls one visitor makes on the feed, in order. Write down the real list after building (check the browser Network tab) and send it to the Tester side.
 
-1. `POST http://localhost:8080/shield/admit` (only on the `shield` branch)
+1. `POST /rest/v1/rpc/shield_admit` (only when the Shield is installed)
 2. `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200`
 3. `HEAD /rest/v1/votes?post_id=eq.<id>` × 20
 4. `POST /functions/v1/ai-summary`
 
-Supabase calls need headers `apikey: <anon key>` and `Authorization: Bearer <anon key>`.
+All requests need headers `apikey: <anon key>` and `Authorization: Bearer <anon key>`.
 
-## Shield script (shield.js)
+## Shield
 
-A plain JavaScript file, no build step. It lives in the repo at `our-side/public/shield.js`, and the Tester Backend serves it at `http://localhost:8080/shield.js`, the way our CDN would in the real product.
+A queue in front of the app. When too many visitors are active, new ones see a waiting page with an email form and are let in first-come-first-served.
 
-What it does:
+Parts:
 
-1. Runs before the app's bundle.
-2. Asks our admit service whether this visitor can enter.
-3. Admitted: lets the app start, then sends a heartbeat every 10 seconds.
-4. Queued: shows a full-screen waiting page with the position and an email form, retries every 5 seconds, and lets the app start once admitted.
-5. Our service unreachable or slower than 2 seconds: lets the app start (fail open), so we never make the customer's app worse.
+- Tables for config, sessions and the waitlist.
+- A database function `shield_admit` that decides admitted or queued. It runs as one transaction with a lock, so two visitors can't take the last slot at the same time. It is called as RPC, so no extra Edge Function is needed.
+- A `ShieldGate` component that wraps the whole app.
 
-The app's own code never runs for a queued visitor, so the database never sees them.
+### Shield SQL
 
-### Install in the app
+```sql
+create table shield_config (
+  id int primary key default 1 check (id = 1),
+  enabled boolean not null default false,
+  max_active int not null default 30,
+  session_ttl_seconds int not null default 30
+);
+insert into shield_config default values;
 
-Two changes. This is what the install prompt must produce.
+create table shield_sessions (
+  id uuid primary key,
+  status text not null check (status in ('active', 'queued')),
+  created_at timestamptz not null default now(),
+  last_seen timestamptz not null default now()
+);
+create index on shield_sessions (status, created_at);
 
-`index.html`, in `<head>`, before the app's script:
+create table waitlist (
+  id bigint generated always as identity primary key,
+  email text not null,
+  created_at timestamptz not null default now()
+);
 
-```html
-<script
-  src="http://localhost:8080/shield.js"
-  data-site="idea-roaster"
-  data-api="http://localhost:8080"></script>
+alter table shield_config enable row level security;
+alter table shield_sessions enable row level security;  -- no policies: only via shield_admit
+alter table waitlist enable row level security;
+create policy "public read" on shield_config for select using (true);
+create policy "anon insert" on waitlist for insert with check (true);
+
+create or replace function shield_admit(p_session uuid)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cfg shield_config;
+  s shield_sessions;
+  active_count int;
+  ahead int;
+begin
+  select * into cfg from shield_config where id = 1;
+  if not cfg.enabled then
+    return json_build_object('status', 'admitted');
+  end if;
+
+  perform pg_advisory_xact_lock(42);
+
+  -- drop visitors who stopped sending heartbeats
+  delete from shield_sessions
+  where last_seen < now() - make_interval(secs => cfg.session_ttl_seconds);
+
+  select * into s from shield_sessions where id = p_session;
+  if not found then
+    insert into shield_sessions (id, status) values (p_session, 'queued')
+    returning * into s;
+  else
+    update shield_sessions set last_seen = now() where id = p_session
+    returning * into s;
+  end if;
+
+  if s.status = 'active' then
+    return json_build_object('status', 'admitted');
+  end if;
+
+  select count(*) into active_count from shield_sessions where status = 'active';
+  select count(*) into ahead from shield_sessions
+  where status = 'queued' and created_at < s.created_at;
+
+  -- first-come-first-served: admit only if free slots cover everyone ahead
+  if ahead < cfg.max_active - active_count then
+    update shield_sessions set status = 'active' where id = p_session;
+    return json_build_object('status', 'admitted');
+  end if;
+
+  return json_build_object('status', 'queued', 'position', ahead + 1);
+end;
+$$;
+
+grant execute on function shield_admit(uuid) to anon;
 ```
 
-It must be a normal script (no `async` or `defer`). The Vite bundle is a module script, which the browser runs later, so `shield.js` always runs first.
+Rules this implements:
 
-`src/main.tsx`, wait for the Shield before rendering:
+- Shield off: everyone is admitted, and the function returns before touching any table.
+- A visitor is active until they stop sending heartbeats for `session_ttl_seconds`.
+- Queued visitors keep their place as long as they keep polling.
+- `max_active` should be below the breaking point the Tester side finds (e.g. breaks at 80 → set 30).
+
+### ShieldGate component
+
+Wrap the whole app with it (in `App.tsx`), so no page queries run before the visitor is admitted. Otherwise queued visitors would still load the database.
 
 ```tsx
-const shieldReady: Promise<void> = (window as any).SpikeShield?.ready ?? Promise.resolve();
+const SESSION_KEY = "shield_session";
 
-shieldReady.then(() => {
-  createRoot(document.getElementById("root")!).render(<App />);
-});
+function getSessionId() {
+  let id = localStorage.getItem(SESSION_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(SESSION_KEY, id);
+  }
+  return id;
+}
+
+type Gate = { status: "checking" | "admitted" | "queued"; position?: number };
+
+export function ShieldGate({ children }: { children: React.ReactNode }) {
+  const [gate, setGate] = useState<Gate>({ status: "checking" });
+
+  useEffect(() => {
+    const id = getSessionId();
+    let timer: number;
+    const check = async () => {
+      const { data, error } = await supabase.rpc("shield_admit", { p_session: id });
+      // fail closed: if the check fails, the app is overloaded, so wait
+      const next: Gate = error ? { status: "queued" } : data;
+      setGate(next);
+      // admitted: heartbeat every 10s; queued: retry every 5s
+      timer = window.setTimeout(check, next.status === "admitted" ? 10000 : 5000);
+    };
+    check();
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (gate.status === "checking") return <Spinner />;
+  if (gate.status === "queued") return <WaitingRoom position={gate.position} />;
+  return <>{children}</>;
+}
 ```
 
-If `shield.js` fails to load, `SpikeShield` is undefined and the app starts normally.
+Heartbeat (10s) must be shorter than `session_ttl_seconds` (30s), or active visitors get dropped.
 
-### shield.js
+### Waiting page
 
-```js
-(function () {
-  var tag = document.currentScript;
-  var site = tag.getAttribute("data-site");
-  var api = tag.getAttribute("data-api");
+- Message: "This app is very popular right now. You're number N in line."
+- Position updates on each retry.
+- Email form: insert into `waitlist`, then show "We'll email you when you're in."
+- Keep it light: no images from the database, no other queries.
 
-  var KEY = "spike_shield_session";
-  var sessionId = localStorage.getItem(KEY);
-  if (!sessionId) {
-    sessionId = crypto.randomUUID();
-    localStorage.setItem(KEY, sessionId);
-  }
+### Admin switch
 
-  var release;
-  var ready = new Promise(function (resolve) { release = resolve; });
-  window.SpikeShield = { ready: ready };
+`/admin` page: toggle `shield_config.enabled` and edit `max_active`. For the demo only. Needs an update policy or a small RPC. If short on time, flip it in the Supabase SQL editor instead:
 
-  function admit() {
-    var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 2000);
-    return fetch(api + "/shield/admit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ siteId: site, sessionId: sessionId }),
-      signal: ctrl.signal,
-    })
-      .then(function (r) { return r.json(); })
-      .catch(function () { return { status: "admitted" }; }) // fail open
-      .finally(function () { clearTimeout(timer); });
-  }
-
-  function start() {
-    hideWaitingPage();
-    release();
-    setInterval(admit, 10000); // heartbeat
-  }
-
-  function check() {
-    admit().then(function (res) {
-      if (res.status === "admitted") return start();
-      showWaitingPage(res.position);
-      setTimeout(check, 5000);
-    });
-  }
-
-  // Waiting page: inline styles only, no requests except our API.
-  var page;
-  function showWaitingPage(position) {
-    if (!page) {
-      page = document.createElement("div");
-      page.id = "spike-shield";
-      page.style.cssText =
-        "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;" +
-        "justify-content:center;background:#fff;font-family:system-ui,sans-serif;";
-      page.innerHTML =
-        '<div style="max-width:360px;padding:24px;text-align:center">' +
-        "<h1 style=\"font-size:22px\">This app is very popular right now</h1>" +
-        '<p>You\'re number <strong id="ss-pos"></strong> in line. This page will let you in automatically.</p>' +
-        '<form id="ss-form" style="margin-top:16px">' +
-        '<p>Or leave your email and we\'ll tell you when you\'re in.</p>' +
-        '<input id="ss-email" type="email" required placeholder="you@example.com" style="padding:8px;width:100%">' +
-        '<button style="margin-top:8px;padding:8px 16px">Notify me</button>' +
-        '<p style="font-size:12px;color:#666">We only use your email to tell you when you can get in.</p>' +
-        "</form></div>";
-      (document.body || document.documentElement).appendChild(page);
-      page.querySelector("#ss-form").addEventListener("submit", function (e) {
-        e.preventDefault();
-        fetch(api + "/shield/waitlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            siteId: site,
-            sessionId: sessionId,
-            email: page.querySelector("#ss-email").value,
-          }),
-        });
-        page.querySelector("#ss-form").innerHTML = "<p>Thanks! We'll email you when you're in.</p>";
-      });
-    }
-    page.querySelector("#ss-pos").textContent = position;
-  }
-
-  function hideWaitingPage() {
-    if (page) page.remove();
-  }
-
-  check();
-})();
+```sql
+update shield_config set enabled = true where id = 1;
 ```
-
-The script runs in `<head>`, before `<body>` exists. The waiting page is added to `document.documentElement` in that case, which still covers the screen.
 
 ### Install prompt
 
-Our product claim is "one prompt in Lovable". We can't run Lovable at the demo, so we show the prompt and switch to a `shield` branch that has it applied. Apply the prompt with any AI coding tool to make that branch, and fix the prompt until it works in one go:
+The Shield must install with one prompt, because that is our product claim. Draft it, test it in a new agent session on a fresh branch of the Fake App (without the Shield), and fix it until it works in one go. Start from:
 
-> Add Spike Shield to this app. In index.html, inside `<head>` and before any other script, add `<script src="http://localhost:8080/shield.js" data-site="idea-roaster" data-api="http://localhost:8080"></script>` without async or defer. In src/main.tsx, wait for `window.SpikeShield?.ready` (use `Promise.resolve()` if it is undefined) before calling createRoot().render.
+> Add a visitor queue to this app. Create tables shield_config, shield_sessions and waitlist and a Postgres function shield_admit with the SQL below. Wrap the whole app in a ShieldGate component that calls supabase.rpc('shield_admit') with a session id stored in localStorage, re-checks every 10 seconds when admitted and every 5 seconds when queued, and shows a waiting page with the queue position and an email form that saves to the waitlist table. Do not render any other page until the visitor is admitted.
+>
+> (paste Shield SQL here)
 
 ## Fix prompts
 
-The Tester dashboard shows these after a check. Apply each one with an AI coding tool on its own branch, and confirm with k6 that it removes the weak point.
+The Tester side shows these after a check. Test each one in a new agent session on a separate branch of the app, and confirm it removes the weak point.
 
-1. `fix/feed`, heavy feed query
+1. Heavy feed query
    > Load the feed 20 posts at a time with pagination. Select only id, title, created_at and the author's username, not the post body. Add a database index on posts(created_at desc).
-2. `fix/votes`, N+1 vote counts
+2. N+1 vote counts
    > Don't query vote counts per post. Create a Postgres view posts_with_votes that returns each post with its vote count in one query, use it in the feed, and add an index on votes(post_id).
-3. `fix/ai`, AI call on every page load
+3. AI call on every page load
    > Don't call ai-summary when the feed loads. Call it only when the user clicks "Roast this idea", and save the result in a roasts table so each idea is roasted only once.
 
 ## Check it breaks (before the Tester side is ready)
 
-Quick load test with [k6](https://k6.io):
+Quick load test from your laptop with [k6](https://k6.io):
 
 ```js
-// spike.js — run: k6 run -e URL=http://localhost:54321 -e KEY=<anon key> spike.js
+// spike.js — run: k6 run -e URL=https://xxx.supabase.co -e KEY=<anon key> spike.js
 import http from "k6/http";
 
 export const options = {
   stages: [
-    { duration: "20s", target: 150 },
-    { duration: "30s", target: 150 },
+    { duration: "20s", target: 100 },
+    { duration: "30s", target: 100 },
     { duration: "10s", target: 0 },
   ],
 };
@@ -409,15 +341,16 @@ export default function () {
 }
 ```
 
-Expected: errors (5xx, timeouts) and p95 of several seconds at the target load. This script skips the Shield. Testing with the Shield is done by the Tester Backend's replay.
+Expected without Shield: errors (5xx, timeouts) and p95 of several seconds at around 100 users. Only run it against our own project, and keep runs short so the free tier isn't paused.
 
 ## Checklist
 
-1. Local Supabase running, schema and seed loaded
-2. Fake App built with the three weak points, served with `vite preview`
-3. IP, Fake App URL, Supabase URL, anon key sent to the Tester side
-4. Resource caps in `user-side/scripts/cap.sh`, `start.sh` works from a fresh clone, k6 shows a stable breaking point
+1. Supabase project created, tables and seed data loaded
+2. Fake App built with the three weak points, deployed to Vercel
+3. URL, Supabase URL, anon key sent to the Tester side
+4. k6 run shows the app breaking
 5. Journey list written from the Network tab and sent
-6. `shield.js` committed, works against the Tester's admit service: queued, waiting page, email sent, admitted
-7. `shield` branch made from the install prompt
-8. `fix/feed`, `fix/votes`, `fix/ai` branches made from the fix prompts and checked with k6
+6. Shield SQL and ShieldGate working, admin switch working
+7. Install prompt works in one go on a fresh copy
+8. Fix prompts tested
+9. With Shield on, k6 run shows the waiting page instead of errors (the script must call shield_admit first; ask the Tester side for the replay)
