@@ -202,7 +202,7 @@ Each one is a common vibe-coded mistake, and each one maps to a fix prompt. Buil
    - Feed loads 200 posts at once, `select *` (includes the long `body`), joined with author, ordered by `created_at` without an index.
    - `supabase.from('posts').select('*, author:profiles(*)').order('created_at', { ascending: false }).limit(200)`
 2. N+1 vote counts
-   - For each of the first 20 posts, a separate request for its vote count. `votes.post_id` has no index, so each one scans 500k rows.
+   - For each of the first 20 posts, a separate request for its vote count. Each post card fetches its own count when it mounts, so all 20 go out at the same moment. `votes.post_id` has no index, so each one scans 500k rows.
    - `supabase.from('votes').select('*', { count: 'exact', head: true }).eq('post_id', post.id)`
 3. AI call on every page load
    - The "Idea of the day" card calls the `ai-summary` Edge Function on every feed load, with no cache.
@@ -237,10 +237,11 @@ If `supabase start` doesn't pick it up, run `supabase functions serve`.
 
 The calls one visitor makes on the feed, in order. Write down the real list after building (browser Network tab) and send it to the Tester side.
 
-1. `POST http://localhost:8090/shield/admit` (only on the `shield` branch)
-2. `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200`
-3. `HEAD /rest/v1/votes?post_id=eq.<id>` × 20
-4. `POST /functions/v1/ai-summary`
+1. `GET http://localhost:4173/` (the page)
+2. `POST http://localhost:8090/shield/admit` (only on the `shield` branch)
+3. `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200`
+4. `HEAD /rest/v1/votes?post_id=eq.<id>` × 20, all sent at the same moment (note in the list which calls go out together)
+5. `POST /functions/v1/ai-summary`
 
 Supabase calls need headers `apikey: <anon key>` and `Authorization: Bearer <anon key>`.
 
