@@ -46,7 +46,7 @@ export default function Idea() {
   async function roastIt() {
     setRoasting(true);
     const { data, error } = await supabase.functions.invoke("ai-summary", {
-      body: { post_id: postId },
+      body: { post_id: postId, title: post?.title },
     });
     setRoast(error ? "The roaster is busy. Try again later." : (data?.roast ?? null));
     setRoasting(false);

@@ -59,7 +59,7 @@ export default function Feed() {
       const ideaOfTheDay = list[0];
       if (ideaOfTheDay) {
         supabase.functions
-          .invoke("ai-summary", { body: { post_id: ideaOfTheDay.id } })
+          .invoke("ai-summary", { body: { post_id: ideaOfTheDay.id, title: ideaOfTheDay.title } })
           .then(({ data, error }) => {
             if (cancelled) return;
             if (error) return fail(error.message);
