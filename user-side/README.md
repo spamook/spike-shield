@@ -80,17 +80,21 @@ Schema: `supabase/migrations/20260926000000_init.sql` (no index on `posts(create
 
 ## Journey
 
-The calls one visitor makes on the feed, in order, recorded from the built app's Network tab:
+The calls one visitor makes on the feed, in order, recorded from the built app's Network tab.
+This is the source for `service-side/journeys/idea-roaster.json`.
 
 | # | Call | Notes |
 |---|---|---|
-| 0 | `POST http://localhost:8090/shield/admit` | `shield` branch only, before anything else |
-| 1 | `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200` | ~300 KB response |
-| 2 | `HEAD /rest/v1/votes?select=*&post_id=eq.<id>` × 20 | header `Prefer: count=exact`, count comes back in `Content-Range` |
-| 3 | `POST /functions/v1/ai-summary` | body `{"post_id":<id of the newest post>}`, ~2 s |
+| 1 | `GET http://localhost:4173/` | the page, then its JS and CSS from the same origin |
+| 2 | `POST http://localhost:8090/shield/admit` | `shield` branch only, before anything else; body `{"siteId":"idea-roaster","sessionId":"<uuid>"}` |
+| 3 | `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200` | ~300 KB response |
+| 4 | `HEAD /rest/v1/votes?select=*&post_id=eq.<id>` × 20 | **all 20 at the same moment**, right after step 3 answers; header `Prefer: count=exact`, count comes back in `Content-Range` |
+| 5 | `POST /functions/v1/ai-summary` | **at the same moment as step 4**; body `{"post_id":<id of the newest post>}`, ~2 s |
 
+Steps 4 and 5 go out together (21 requests in one burst) as soon as the feed response arrives.
 Every Supabase call sends `apikey: <anon key>` and `Authorization: Bearer <anon key>`. The
 browser sends a CORS preflight (`OPTIONS`) before each of them; the load test can skip those.
+Query parameter order does not matter to PostgREST (`post_id=eq.1&select=*` is the same call).
 
 The detail page adds: `GET /rest/v1/posts?select=*,author:profiles(*)&id=eq.<id>`
 (`Accept: application/vnd.pgrst.object+json`), one `HEAD` vote count, and `POST
@@ -123,7 +127,7 @@ stands in for our CDN and hosted admit service: all state is in memory, a restar
 | GET | `/shield.js` | Fake App | Static file from `shield/public/` |
 | POST | `/shield/admit` | `shield.js`, Tester replay | `{ siteId, sessionId }` → `{ status: "admitted" }` or `{ status: "queued", position }` |
 | POST | `/shield/waitlist` | `shield.js` | `{ siteId, sessionId, email }` → `204` |
-| PUT | `/shield/config` | Tester Backend | `{ siteId, enabled, threshold }` → current stats |
+| PUT | `/shield/config` | Tester Backend | `{ siteId, enabled, threshold }` → `204` |
 | GET | `/shield/stats?siteId=…` | Tester Backend | `{ enabled, threshold, active, queued, emails, notices }` |
 
 A new site starts disabled with threshold 30, so the Shield does nothing until the Tester

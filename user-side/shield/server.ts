@@ -5,7 +5,7 @@
 //   GET  /shield.js                 Fake App          static file from public/
 //   POST /shield/admit              shield.js, replay { siteId, sessionId } -> { status, position? }
 //   POST /shield/waitlist           shield.js         { siteId, sessionId, email } -> 204
-//   PUT  /shield/config             Tester Backend    { siteId, enabled, threshold }
+//   PUT  /shield/config             Tester Backend    { siteId, enabled, threshold } -> 204
 //   GET  /shield/stats?siteId=...   Tester Backend    { enabled, threshold, active, queued, emails, notices }
 import express from "express";
 import path from "node:path";
@@ -52,7 +52,7 @@ app.put("/shield/config", (req, res) => {
     return res.status(400).json({ error: "siteId (string), enabled (boolean), threshold (integer) required" });
   }
   configure(siteId, enabled, threshold);
-  res.json(stats(siteId));
+  res.sendStatus(204);
 });
 
 app.get("/shield/stats", (req, res) => {
