@@ -1,8 +1,10 @@
-// Sets <body data-state> so the rush tester can tell what a visitor sees (see "Page states" in
-// fakeapp-scripts-work.md and team-plan.md). Call setPageState("loading") when a page starts
-// loading, then "ready" once all of its Supabase calls have settled, or "error" if any failed.
+// Page states for the rush tester (contract in team-plan.md). It reads <body data-state>:
+//   loading: the app is starting or waiting for the feed
+//   ready:   the feed rendered with data
+//   error:   a Supabase call failed and the app shows an error
+// index.html starts at "loading"; the pages update it.
 export type PageState = "loading" | "ready" | "error";
 
-export function setPageState(state: PageState): void {
+export function setPageState(state: PageState) {
   document.body.dataset.state = state;
 }

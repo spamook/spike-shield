@@ -84,7 +84,7 @@ export default function Feed() {
         if (!ideaOfTheDay) return;
         try {
           const { data, error } = await supabase.functions.invoke("ai-summary", {
-            body: { post_id: ideaOfTheDay.id },
+            body: { post_id: ideaOfTheDay.id, title: ideaOfTheDay.title },
           });
           if (cancelled) return;
           if (error) fail();

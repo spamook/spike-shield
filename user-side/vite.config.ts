@@ -1,9 +1,10 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// Two builds from the same code (see "Two builds" in fakeapp-scripts-work.md): the script tag is
-// only inserted when SHIELD=1, so `npm run build` and `SHIELD=1 npm run build` can be served side
-// by side without the Shield build touching the Shield-free one.
+// Two builds from the same code (see "Two builds" in fakeapp-scripts-work.md):
+//   npm run build -- --outDir dist-plain            without the Shield, served on :4173
+//   SHIELD=1 npm run build -- --outDir dist-shield  with the Shield, served on :4174
+// With SHIELD=1 the install prompt's script tag goes into <head> before any other script.
 const shieldTag =
   '<script src="http://localhost:8090/shield.js" data-site="idea-roaster" data-api="http://localhost:8090"></script>'
 
@@ -17,8 +18,6 @@ export default defineConfig({
         process.env.SHIELD === '1' ? html.replace('<head>', `<head>\n    ${shieldTag}`) : html,
     },
   ],
-  // Serve the production build the way Lovable's CDN would: `npm run build && npx vite preview`.
-  // Both builds are previewed at once (:4173 without the Shield, :4174 with it), each with its
-  // own --outDir and --port passed on the CLI, so no fixed port/strictPort here.
-  preview: {},
+  // Serve the production build the way Lovable's CDN would: `npx vite preview --outDir ... --port ...`
+  preview: { strictPort: true },
 })

@@ -9,12 +9,14 @@
  *
  * 1. Asks the admit service whether this visitor can enter (POST /shield/admit).
  * 2. Admitted: lets the app start, then sends a heartbeat every 10 seconds.
- * 3. Queued: shows a full-screen waiting page with the position and an email form, retries
- *    every 5 seconds, and lets the app start once admitted.
- * 4. On pagehide: tells the service the visitor left (POST /shield/leave), so the slot frees at once.
+ * 3. Queued: shows a full-screen waiting page with the position, retries every 5 seconds, and
+ *    lets the app start once admitted.
+ * 4. Page closed: tells the service the visitor left (POST /shield/leave via sendBeacon), so the
+ *    slot or place in line frees at once instead of after 30 seconds.
  * 5. Service unreachable or slower than 2 seconds: lets the app start (fail open).
  *
  * The app's own code never runs for a queued visitor, so its database never sees them.
+ * No email form in the demo (see Stretch in team-plan.md).
  */
 (function () {
   var tag = document.currentScript;
@@ -93,13 +95,15 @@
     });
   }
 
-  // Leaving frees the slot at once instead of after 30 seconds.
-  // A plain string is sent as text/plain, which needs no CORS preflight.
-  window.addEventListener("pagehide", function () {
-    navigator.sendBeacon(api + "/shield/leave", JSON.stringify({ siteId: site, sessionId: sessionId }));
-  });
+  // Leaving frees the slot at once instead of after 30 seconds. A plain string is sent as
+  // text/plain, which needs no CORS preflight. A reload also counts as leaving.
+  if (navigator.sendBeacon) {
+    window.addEventListener("pagehide", function () {
+      navigator.sendBeacon(api + "/shield/leave", JSON.stringify({ siteId: site, sessionId: sessionId }));
+    });
+  }
 
-  // Waiting page: inline styles only, no requests except our API.
+  // Waiting page: inline styles only, no requests except our API. The tester looks for #spike-shield.
   var page;
   function showWaitingPage(position) {
     if (!page) {
@@ -112,27 +116,10 @@
       page.innerHTML =
         '<div style="max-width:360px;padding:24px">' +
         '<h1 style="font-size:22px;margin:0 0 12px">This app is very popular right now</h1>' +
-        '<p style="margin:0 0 8px">You\'re number <strong id="ss-pos"></strong> in line. This page will let you in automatically.</p>' +
-        '<form id="ss-form" style="margin-top:16px">' +
-        '<p style="margin:0 0 8px">Or leave your email and we\'ll tell you when you\'re in.</p>' +
-        '<input id="ss-email" type="email" required placeholder="you@example.com" ' +
-        'style="padding:8px;width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:6px;font-size:15px">' +
-        '<button type="submit" style="margin-top:8px;padding:8px 16px;border:0;border-radius:6px;' +
-        'background:#1a1a1a;color:#fff;font-size:15px;cursor:pointer">Notify me</button>' +
-        '<p style="font-size:12px;color:#666;margin:8px 0 0">We only use your email to tell you when you can get in.</p>' +
-        "</form></div>";
+        '<p style="margin:0 0 8px">You\'re number <strong id="ss-pos"></strong> in line.</p>' +
+        '<p style="margin:0;color:#666">Keep this tab open. We\'ll let you in automatically.</p>' +
+        "</div>";
       (document.body || document.documentElement).appendChild(page);
-      page.querySelector("#ss-form").addEventListener("submit", function (e) {
-        e.preventDefault();
-        var email = page.querySelector("#ss-email").value;
-        fetch(api + "/shield/waitlist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ siteId: site, sessionId: sessionId, email: email }),
-        }).catch(function () {});
-        page.querySelector("#ss-form").innerHTML =
-          '<p style="margin-top:16px">Thanks! We\'ll email you when you\'re in.</p>';
-      });
     }
     page.querySelector("#ss-pos").textContent = position == null ? "…" : String(position);
   }

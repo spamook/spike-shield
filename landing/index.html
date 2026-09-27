@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Spike Shield</title>
+<meta name="description" content="A waiting room for your vibe-coded app. One script keeps your Supabase alive on launch day." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #f4f6f5;
+    --surface: #ffffff;
+    --surface-2: #e9efec;
+    --ink: #101c2a;
+    --ink-2: #4a5966;
+    --line: #d6dedb;
+    --admit: #0b8f6e;
+    --admit-soft: #d7f2e8;
+    --queue: #e0951f;
+    --queue-soft: #fbedd0;
+    --down: #cc3a2f;
+    --down-soft: #f9dcd8;
+    --code-bg: #101c2a;
+    --code-ink: #e6eef3;
+    --shadow: 0 1px 2px rgba(16, 28, 42, 0.06), 0 12px 32px -16px rgba(16, 28, 42, 0.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0e161e;
+      --surface: #16212b;
+      --surface-2: #1f2c38;
+      --ink: #eef3f6;
+      --ink-2: #a3b1bc;
+      --line: #2c3a47;
+      --admit: #34c79a;
+      --admit-soft: #143a30;
+      --queue: #f0b24a;
+      --queue-soft: #3d2f12;
+      --down: #f0665b;
+      --down-soft: #45201c;
+      --code-bg: #0a1017;
+      --code-ink: #dbe6ee;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0e161e;
+    --surface: #16212b;
+    --surface-2: #1f2c38;
+    --ink: #eef3f6;
+    --ink-2: #a3b1bc;
+    --line: #2c3a47;
+    --admit: #34c79a;
+    --admit-soft: #143a30;
+    --queue: #f0b24a;
+    --queue-soft: #3d2f12;
+    --down: #f0665b;
+    --down-soft: #45201c;
+    --code-bg: #0a1017;
+    --code-ink: #dbe6ee;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+    padding-inline: 20px;
+  }
+  a { color: inherit; }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(38px, 6vw, 68px); font-weight: 800; line-height: 1.02; letter-spacing: -0.02em; }
+  h2 { font-size: clamp(28px, 3.6vw, 40px); font-weight: 700; line-height: 1.1; letter-spacing: -0.015em; }
+  h3 { font-size: 20px; font-weight: 700; line-height: 1.25; }
+  p { margin: 0; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  .lede { font-size: 20px; color: var(--ink-2); max-width: 34em; }
+  .muted { color: var(--ink-2); }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .num { font-variant-numeric: tabular-nums; }
+  section { padding-block: 72px; }
+  section + section { border-top: 1px solid var(--line); }
+  .stack { display: grid; gap: 20px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px;
+    font-weight: 600; text-decoration: none; border: 1px solid transparent; cursor: pointer; font: inherit; font-weight: 600;
+    transition: transform 120ms ease, background 120ms ease;
+  }
+  .btn:focus-visible, .slider:focus-visible, .copy:focus-visible { outline: 3px solid var(--admit); outline-offset: 3px; }
+  .btn-primary { background: var(--ink); color: var(--ground); }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost { background: transparent; border-color: var(--line); color: var(--ink); }
+  .btn-ghost:hover { background: var(--surface); }
+
+  /* Header */
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: "Bricolage Grotesque", sans-serif; font-weight: 800; font-size: 20px; text-decoration: none; }
+  .brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--admit); position: relative; }
+  .brand-mark::after { content: ""; position: absolute; inset: 7px 7px 7px 7px; border-radius: 3px; background: var(--ground); }
+  nav.links { display: flex; gap: 22px; font-size: 15px; font-weight: 500; }
+  nav.links a { text-decoration: none; color: var(--ink-2); }
+  nav.links a:hover { color: var(--ink); }
+  @media (max-width: 640px) { nav.links { display: none; } }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center; padding-block: 40px 72px; }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; gap: 36px; } }
+  .hero .stack { gap: 24px; }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .hero-note { font-size: 14px; color: var(--ink-2); }
+
+  /* Live demo */
+  .demo { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 20px; display: grid; gap: 16px; }
+  .demo-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .demo-head .eyebrow { color: var(--admit); }
+  .slider-row { display: grid; gap: 6px; }
+  .slider-row label { display: flex; justify-content: space-between; font-size: 14px; font-weight: 500; }
+  .slider { width: 100%; accent-color: var(--ink); }
+  .timeline { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 6px; }
+  .timeline i { display: block; height: 100%; width: 0; background: var(--ink-2); transition: width 500ms linear; }
+  .replay { font: inherit; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+  .replay:hover { background: var(--surface-2); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat { border-radius: 10px; padding: 10px 12px; background: var(--surface-2); display: grid; gap: 2px; }
+  .stat .k { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+  .stat .v { font-family: "Bricolage Grotesque", sans-serif; font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .stat.admit { background: var(--admit-soft); } .stat.admit .v { color: var(--admit); }
+  .stat.queue { background: var(--queue-soft); } .stat.queue .v { color: var(--queue); }
+  .stat.db .v { color: var(--ink); }
+  .stat.db.over { background: var(--down-soft); } .stat.db.over .v { color: var(--down); }
+  .waiting.down { background: var(--down-soft); border-style: solid; border-color: transparent; }
+  canvas.chart { width: 100%; height: 120px; display: block; border-radius: 8px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .waiting { border: 1px dashed var(--line); border-radius: 12px; padding: 16px; text-align: center; display: grid; gap: 4px; min-height: 96px; align-content: center; transition: background 160ms ease; }
+  .waiting.on { background: var(--queue-soft); border-style: solid; border-color: transparent; }
+  .waiting.off { background: var(--admit-soft); border-style: solid; border-color: transparent; }
+  .waiting strong { font-family: "Bricolage Grotesque", sans-serif; font-size: 18px; }
+  .waiting small { font-size: 13px; color: var(--ink-2); }
+
+  /* Problem */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: grid; gap: 10px; align-content: start; }
+  .card .tag { display: inline-flex; width: fit-content; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .tag.down { background: var(--down-soft); color: var(--down); }
+  .tag.bill { background: var(--queue-soft); color: var(--queue); }
+  .tag.ok { background: var(--admit-soft); color: var(--admit); }
+  .thesis { font-family: "Bricolage Grotesque", sans-serif; font-size: clamp(22px, 2.6vw, 30px); font-weight: 700; line-height: 1.2; max-width: 22em; text-wrap: balance; }
+
+  /* How it works: flow */
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; }
+  @media (max-width: 760px) { .flow { grid-template-columns: 1fr; } .flow .arrow { transform: rotate(90deg); justify-self: center; } }
+  .node { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 6px; align-content: start; }
+  .node .eyebrow { font-size: 11px; }
+  .arrow { align-self: center; color: var(--ink-2); font-size: 22px; }
+  .split { display: grid; gap: 14px; }
+  .node.admit { border-color: var(--admit); }
+  .node.queue { border-color: var(--queue); }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 28px; }
+  .fact { display: grid; gap: 4px; padding-left: 14px; border-left: 3px solid var(--line); }
+  .fact b { font-family: "Bricolage Grotesque", sans-serif; font-size: 22px; font-weight: 700; }
+  .fact span { font-size: 15px; color: var(--ink-2); }
+
+  /* Install */
+  .install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 36px; align-items: start; }
+  @media (max-width: 900px) { .install { grid-template-columns: 1fr; } }
+  .prompt { position: relative; background: var(--code-bg); color: var(--code-ink); border-radius: 14px; padding: 20px 22px 22px; font-size: 14.5px; line-height: 1.6; overflow-x: auto; }
+  .prompt .label { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; font-family: "Instrument Sans", sans-serif; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.7; }
+  .copy { font: inherit; font-family: "Instrument Sans", sans-serif; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25); background: transparent; color: var(--code-ink); cursor: pointer; }
+  .copy:hover { background: rgba(255,255,255,0.08); }
+  .prompt code { white-space: pre-wrap; word-break: break-word; }
+  .changes { display: grid; gap: 12px; }
+  .change { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; }
+  .change .n { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; font-family: "Bricolage Grotesque", sans-serif; font-weight: 700; font-size: 14px; }
+  .change code { font-family: "IBM Plex Mono", monospace; font-size: 14px; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; }
+
+  /* Pricing */
+  .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .plan { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 26px; display: grid; gap: 16px; align-content: start; }
+  .plan.featured { border-color: var(--admit); box-shadow: var(--shadow); }
+  .price { font-family: "Bricolage Grotesque", sans-serif; font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  .price small { font-family: "Instrument Sans", sans-serif; font-size: 15px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+  .plan ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+  .plan li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; font-size: 15.5px; }
+  .plan li::before { content: "✓"; color: var(--admit); font-weight: 700; }
+  .plan li.soon::before { content: "→"; color: var(--ink-2); }
+
+  /* Why not DIY */
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; }
+  .two h3 { margin-bottom: 8px; }
+
+  /* CTA + footer */
+  .cta { background: var(--ink); color: var(--ground); border-radius: 20px; padding: 44px 32px; display: grid; gap: 18px; justify-items: start; }
+  .cta h2 { color: var(--ground); }
+  .cta .btn-primary { background: var(--ground); color: var(--ink); }
+  .cta .btn-ghost { border-color: rgba(255,255,255,0.3); color: var(--ground); }
+  .cta .btn-ghost:hover { background: rgba(255,255,255,0.08); }
+  footer { padding-block: 32px 48px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Spike Shield</a>
+    <nav class="links" aria-label="Sections">
+      <a href="#what">What it is</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a href="#pricing">Pricing</a>
+      <a href="01-check.html">Demo</a>
+    </nav>
+    <a class="btn btn-ghost" href="#install">Add the Shield</a>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="stack">
+      <p class="eyebrow">For vibe-coded apps on Supabase</p>
+      <h1>Go viral without going down.</h1>
+      <p class="lede">The day your app takes off is the day you can lose every new customer at once: an error, and they never come back. Spike Shield keeps them. One script adds a waiting room, so extra visitors wait a minute and get in instead of leaving for good.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="#install">Install with one prompt</a>
+        <a class="btn btn-ghost" href="01-check.html">Walk through the demo</a>
+      </div>
+      <p class="hero-note">Free for the queue and the alerts. No infrastructure to learn, nothing to configure in Supabase.</p>
+    </div>
+
+    <div class="demo" aria-label="Interactive demo of the Shield during a spike">
+      <div class="demo-head">
+        <p class="eyebrow">Launch day, minute by minute</p>
+        <button class="replay" id="replayBtn" type="button">Replay</button>
+      </div>
+      <div class="slider-row">
+        <label for="thrSlider"><span>Your threshold: how many you let in at once</span><b class="num" id="thrOut">120</b></label>
+        <input class="slider" type="range" id="thrSlider" min="20" max="400" value="120" step="5" />
+      </div>
+      <div class="stats">
+        <div class="stat admit"><span class="k">Let into the app</span><span class="v num" id="inApp">120</span></div>
+        <div class="stat queue"><span class="k">Waiting in line</span><span class="v num" id="inLine">60</span></div>
+        <div class="stat db" id="dbBox"><span class="k">Database at</span><span class="v num" id="dbLoad">80%</span></div>
+      </div>
+      <canvas class="chart" id="chart" width="900" height="240" aria-label="Visitors over launch day against the threshold and the database limit" role="img"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--admit)"></i>Reaches the app and the database</span>
+        <span><i style="background:var(--queue)"></i>Waits on the waiting page</span>
+        <span><i style="background:var(--ink-2)"></i>Your threshold</span>
+        <span><i style="background:var(--down)"></i>Where the database breaks</span>
+      </div>
+      <div class="waiting on" id="waiting" aria-live="polite">
+        <strong id="waitTitle">This app is very popular right now</strong>
+        <span id="waitBody">You're number <b class="num">60</b> in line. Keep this tab open, we'll let you in automatically.</span>
+        <small id="waitNote">What visitor 121 sees. The database never hears from them.</small>
+      </div>
+    </div>
+  </section>
+
+  <section id="what">
+    <div class="stack" style="gap:28px">
+      <p class="eyebrow">What Spike Shield is</p>
+      <p class="thesis">A waiting room for small apps built with AI tools. It sits between your visitors and your database, and only lets in as many people as the database can handle.</p>
+      <div class="cards">
+        <div class="card">
+          <span class="tag ok">The script</span>
+          <h3>One line in your app</h3>
+          <p class="muted">A tiny script that loads before your app does. It asks our service whether this visitor can come in, and either starts the app or shows a waiting page. No backend changes, no SDK, no config in Supabase.</p>
+        </div>
+        <div class="card">
+          <span class="tag ok">The queue</span>
+          <h3>A counter that lives outside your stack</h3>
+          <p class="muted">Our service counts who is active in your app right now. Above your threshold, new visitors wait in line and get in automatically as slots free up. It keeps counting while your database is having its worst day.</p>
+        </div>
+        <div class="card">
+          <span class="tag ok">The dashboard</span>
+          <h3>See the buzz as it happens</h3>
+          <p class="muted">Active visitors, the length of the line, the emails people left while waiting, and an alert the moment a spike starts. Turn the Shield on or off and set the threshold from one page.</p>
+        </div>
+      </div>
+      <p class="muted" style="max-width:52em">Built for people who ship an app in an afternoon with an AI coding tool, put it on Supabase, and post it somewhere. Not for engineers with a load balancer and an on-call rotation; they already have tools for this.</p>
+    </div>
+  </section>
+
+  <section id="problem">
+    <div class="stack" style="gap:28px">
+      <p class="eyebrow">The problem</p>
+      <p class="thesis">A post takes off, thousands of people open your app in an hour, and one of two things happens.</p>
+      <div class="cards">
+        <div class="card">
+          <span class="tag down">Downtime</span>
+          <h3>The database falls over</h3>
+          <p class="muted">Your app is static files on a CDN talking straight to Supabase. The CDN never breaks under load. Supabase does, usually on the one query the feed makes 200 times a second. The people the buzz brought in see an error and leave.</p>
+        </div>
+        <div class="card">
+          <span class="tag bill">The bill</span>
+          <h3>Usage pricing explodes</h3>
+          <p class="muted">Every visit calls the database, and often an AI model too. Ten thousand visitors is ten thousand AI calls. The invoice arrives after the traffic is gone.</p>
+        </div>
+        <div class="card">
+          <span class="tag ok">The fix</span>
+          <h3>Surviving beats predicting</h3>
+          <p class="muted">Knowing your app breaks at 80 users does not help at 2 a.m. when 800 show up. A queue in front of the app does. Everyone gets in, a few of them a minute later.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="stack" style="gap:28px">
+      <p class="eyebrow">How the Shield works</p>
+      <h2>A waiting room that lives outside your database.</h2>
+      <p class="lede">The script runs before your app does and asks our admit service one question: can this visitor come in?</p>
+      <div class="flow">
+        <div class="node">
+          <p class="eyebrow">1 · Page loads</p>
+          <h3>shield.js asks to enter</h3>
+          <p class="muted">Before your bundle starts, the script sends this visitor's session to our admit service. It counts who is active right now, with a heartbeat every 10 seconds.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="split">
+          <div class="node admit">
+            <p class="eyebrow" style="color:var(--admit)">Under the threshold</p>
+            <h3>Admitted</h3>
+            <p class="muted">Your app starts and talks to Supabase exactly as it did before. Nothing in your code changes.</p>
+          </div>
+          <div class="node queue">
+            <p class="eyebrow" style="color:var(--queue)">Over the threshold</p>
+            <h3>Queued</h3>
+            <p class="muted">The visitor sees the waiting page with their place in line and gets in automatically when a slot frees. Your database never sees them.</p>
+          </div>
+        </div>
+      </div>
+      <div class="facts">
+        <div class="fact"><b>10 s</b><span>heartbeat while a visitor is in the app</span></div>
+        <div class="fact"><b>30 s</b><span>of silence frees a slot; closing the tab frees it at once</span></div>
+        <div class="fact"><b>First come, first served</b><span>a queued visitor keeps their place as long as the tab stays open</span></div>
+        <div class="fact"><b>Fail open</b><span>if our service is unreachable, everyone gets in, so we never make your app worse</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="install">
+      <div class="stack">
+        <p class="eyebrow">Install</p>
+        <h2>One prompt in your AI coding tool.</h2>
+        <p class="lede">The prompt makes two changes to your app. That is the whole install.</p>
+        <div class="changes">
+          <div class="change"><span class="n">1</span><p>A script tag in <code>index.html</code>, first in <code>&lt;head&gt;</code>, so it runs before your bundle.</p></div>
+          <div class="change"><span class="n">2</span><p>In <code>src/main.tsx</code>, the app waits for <code>window.SpikeShield?.ready</code> before it renders. Without the script that promise resolves at once.</p></div>
+        </div>
+        <p class="muted" style="font-size:15px">Works with any static frontend that talks to Supabase from the browser: React with Vite or Parcel, whatever your tool ships.</p>
+      </div>
+      <div class="prompt">
+        <div class="label"><span>Paste into your AI coding tool</span><button class="copy" id="copyBtn" type="button">Copy prompt</button></div>
+        <code id="promptText">Add Spike Shield to this app. In index.html, inside &lt;head&gt; and before any other script, add &lt;script src="https://cdn.spikeshield.app/shield.js" data-site="YOUR-SITE-ID" data-api="https://api.spikeshield.app"&gt;&lt;/script&gt; without async or defer. In src/main.tsx, wait for window.SpikeShield?.ready (use Promise.resolve() if it is undefined) before calling createRoot().render.</code>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <div class="stack" style="gap:28px">
+      <p class="eyebrow">Pricing</p>
+      <h2>Insurance for launch day, priced like a coffee.</h2>
+      <p class="lede">Most apps are quiet most months. You pay one flat fee and stop guessing your traffic.</p>
+      <div class="plans">
+        <div class="plan">
+          <div>
+            <p class="eyebrow">Free</p>
+            <p class="price">$0<small> / month</small></p>
+          </div>
+          <ul>
+            <li>Queue and waiting page</li>
+            <li>Dashboard: active visitors and queue length</li>
+            <li>Spike alerts, so you know when the buzz hits</li>
+            <li>Up to a monthly cap of queued visitors</li>
+          </ul>
+          <a class="btn btn-ghost" href="#install">Add the Shield</a>
+        </div>
+        <div class="plan featured">
+          <div>
+            <p class="eyebrow" style="color:var(--admit)">Shield</p>
+            <p class="price">$9<small> / month, flat</small></p>
+          </div>
+          <ul>
+            <li>Everything in Free</li>
+            <li>Higher monthly cap</li>
+            <li class="soon">Email capture on the waiting page</li>
+            <li class="soon">"You're in" emails when a slot frees up</li>
+          </ul>
+          <a class="btn btn-primary" href="#install">Start with Shield</a>
+        </div>
+      </div>
+      <p class="muted" style="font-size:14px">Arrows mark what ships next. Every plan uses the same waiting page; the email form appears when the plan includes it.</p>
+    </div>
+  </section>
+
+  <section id="why">
+    <div class="two">
+      <div>
+        <p class="eyebrow">Why not build it yourself</p>
+        <h3>A do-it-yourself queue runs on your own database</h3>
+        <p class="muted">Which is the thing that fails during a spike. The Shield's counters run on our edge, outside your Supabase, so they stay up exactly when yours is struggling.</p>
+      </div>
+      <div>
+        <p class="eyebrow">Who it is for</p>
+        <h3>Builders who ship fast and fix by prompting</h3>
+        <p class="muted">Enterprise waiting rooms are priced and built for enterprises. Nothing served one-person, vibe-coded apps until now. You should not have to learn infrastructure to survive a good day.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="cta">
+      <p class="eyebrow" style="color:var(--surface-2)">Ready before the buzz</p>
+      <h2>Add the Shield today. Forget about it until launch day.</h2>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="#install">Install with one prompt</a>
+        <a class="btn btn-ghost" href="01-check.html">Walk through the demo</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Spike Shield · a hackathon build, demoed on a vibe-coded app with a capped Supabase</span>
+    <span>Queue outside your database · fail open · one prompt to install</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var BREAK = 150; // where this app's database breaks (what the check measures)
+  var PEAK = 320;  // how big this launch day gets; the internet decides, not the builder
+  var STEP_MS = 650;
+  var THRESHOLD = 120;
+  var thrSlider = document.getElementById("thrSlider");
+  var replayBtn = document.getElementById("replayBtn");
+  var timeFill = document.getElementById("timeFill");
+  var thrOut = document.getElementById("thrOut");
+  var out = document.getElementById("visitorsOut");
+  var inApp = document.getElementById("inApp");
+  var inLine = document.getElementById("inLine");
+  var dbLoad = document.getElementById("dbLoad");
+  var dbBox = document.getElementById("dbBox");
+  var waiting = document.getElementById("waiting");
+  var waitTitle = document.getElementById("waitTitle");
+  var waitBody = document.getElementById("waitBody");
+  var waitNote = document.getElementById("waitNote");
+  var canvas = document.getElementById("chart");
+
+  // A launch-day curve: quiet, then the post takes off, then it settles. Peak scales with the slider.
+  var shape = [8, 9, 10, 12, 14, 18, 30, 60, 100, 130, 100, 80, 65, 55, 48, 42, 38, 34, 30, 26, 24, 22, 21, 20];
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  var idx = 0;       // where we are in the day
+  var timer = null;
+  function visitorsAt(i) { return Math.round((shape[i] / 130) * PEAK); }
+
+  function draw() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    var ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    var padL = 6, padR = 6, padT = 8, padB = 6;
+    var maxY = Math.max(PEAK, THRESHOLD, BREAK) * 1.15;
+    var scaleX = (w - padL - padR) / (shape.length - 1);
+    var scaleY = (h - padT - padB) / maxY;
+    var pts = shape.map(function (s, i) { return [padL + i * scaleX, h - padB - visitorsAt(i) * scaleY]; });
+    var past = pts.slice(0, idx + 1);
+    var thrY = h - padB - THRESHOLD * scaleY;
+    var breakY = h - padB - BREAK * scaleY;
+
+    // the rest of the day, faint: what is still to come
+    ctx.beginPath();
+    pts.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    ctx.lineWidth = 1; ctx.strokeStyle = css("--line"); ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+
+    if (past.length > 1) {
+      // admitted area (below the threshold line), so far
+      ctx.beginPath();
+      ctx.moveTo(past[0][0], h - padB);
+      past.forEach(function (p) { ctx.lineTo(p[0], Math.max(p[1], thrY)); });
+      ctx.lineTo(past[past.length - 1][0], h - padB);
+      ctx.closePath();
+      ctx.fillStyle = css("--admit-soft"); ctx.fill();
+
+      // queued area (above the threshold line), so far
+      ctx.beginPath();
+      ctx.moveTo(past[0][0], thrY);
+      past.forEach(function (p) { ctx.lineTo(p[0], Math.min(p[1], thrY)); });
+      ctx.lineTo(past[past.length - 1][0], thrY);
+      ctx.closePath();
+      ctx.fillStyle = css("--queue-soft"); ctx.fill();
+
+      // curve so far
+      ctx.beginPath();
+      past.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+      ctx.lineWidth = 2; ctx.strokeStyle = css("--admit"); ctx.stroke();
+    }
+
+    // where the database breaks (red, dotted) and your threshold (dashed)
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, breakY); ctx.lineTo(w - padR, breakY);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = css("--down"); ctx.stroke();
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, thrY); ctx.lineTo(w - padR, thrY);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = css("--ink-2"); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // "now" marker
+    var v = visitorsAt(idx);
+    var over = Math.min(v, THRESHOLD) > BREAK;
+    var now = pts[idx];
+    ctx.beginPath(); ctx.arc(now[0], now[1], 4, 0, Math.PI * 2);
+    ctx.fillStyle = over ? css("--down") : v > THRESHOLD ? css("--queue") : css("--admit"); ctx.fill();
+    ctx.font = "11px 'Instrument Sans', sans-serif"; ctx.fillStyle = css("--ink-2");
+    ctx.textAlign = idx > shape.length * 0.7 ? "right" : "left";
+    ctx.fillText("now: " + v, now[0] + (idx > shape.length * 0.7 ? -8 : 8), Math.max(now[1] - 6, 10));
+  }
+
+  function update() {
+    var v = visitorsAt(idx);
+    THRESHOLD = Number(thrSlider.value);
+    if (timeFill) timeFill.style.width = Math.round((idx / (shape.length - 1)) * 100) + "%";
+    thrOut.textContent = THRESHOLD;
+    var admitted = Math.min(v, THRESHOLD);
+    var queued = Math.max(0, v - THRESHOLD);
+    var load = Math.round((admitted / BREAK) * 100);
+    if (out) out.textContent = v;
+    inApp.textContent = admitted;
+    inLine.textContent = queued;
+    dbLoad.textContent = load + "%";
+    dbBox.className = "stat db" + (load > 100 ? " over" : "");
+    if (load > 100) {
+      waiting.className = "waiting down";
+      waitTitle.textContent = "Something went wrong";
+      waitBody.textContent = "Your threshold lets in more people than the database can take. It breaks at about " + BREAK + ".";
+      waitNote.textContent = "Lower the threshold to " + BREAK + " or less and the app stays up.";
+    } else if (queued > 0) {
+      waiting.className = "waiting on";
+      waitTitle.textContent = "This app is very popular right now";
+      waitBody.innerHTML = 'You\'re number <b class="num">' + queued + '</b> in line. Keep this tab open, we\'ll let you in automatically.';
+      waitNote.textContent = "What visitor " + (THRESHOLD + 1) + " sees. The database never hears from them.";
+    } else {
+      waiting.className = "waiting off";
+      waitTitle.textContent = "Everyone is in";
+      waitBody.textContent = "Under the threshold the Shield does nothing. The app starts the moment the page loads.";
+      waitNote.textContent = v <= 25 ? "Quiet for now. The day is not over." : "Database at " + load + "% of what it can take, no one waiting.";
+    }
+    draw();
+  }
+
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function playDay() {
+    clearInterval(timer);
+    idx = 0; update();
+    if (reduced) { idx = shape.indexOf(130); update(); return; } // no animation: show the peak of the day
+    timer = setInterval(function () {
+      idx++;
+      if (idx >= shape.length - 1) { idx = shape.length - 1; update(); clearInterval(timer); timer = setTimeout(playDay, 3000); return; }
+      update();
+    }, STEP_MS);
+  }
+  replayBtn.addEventListener("click", playDay);
+  thrSlider.addEventListener("input", update);
+  window.addEventListener("resize", draw);
+  if (window.matchMedia) {
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq.addEventListener) mq.addEventListener("change", draw);
+  }
+  playDay();
+
+  var copyBtn = document.getElementById("copyBtn");
+  var promptText = document.getElementById("promptText");
+  copyBtn.addEventListener("click", function () {
+    var text = promptText.textContent;
+    function done(ok) {
+      copyBtn.textContent = ok ? "Copied" : "Select and copy";
+      setTimeout(function () { copyBtn.textContent = "Copy prompt"; }, 1800);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { select(); done(false); });
+    } else { select(); done(false); }
+    function select() {
+      var range = document.createRange(); range.selectNodeContents(promptText);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    }
+  });
+})();
+</script>
+</body>
+</html>

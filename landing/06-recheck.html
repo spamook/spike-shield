@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Spike Shield · 6 Re-check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body data-step="6">
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><h1>Spike Shield</h1></a>
+    <div class="site"><span class="muted">Site</span><code>idea-roaster</code><span class="pill off" id="appPill"><i></i>Quiet</span></div>
+    <span class="pill warn">Simulated for the pitch</span>
+  </header>
+
+  <div class="stephead">
+    <nav class="steps" aria-label="Demo steps">
+      <a class="step done" href="01-check.html"><b>1</b>Check</a><a class="step done" href="02-spike.html"><b>2</b>Spike</a><a class="step done" href="03-install.html"><b>3</b>Install + Shield on</a><a class="step done" href="04-queue.html"><b>4</b>Queue</a><a class="step done" href="05-quiet.html"><b>5</b>Back to quiet</a><a class="step now" href="06-recheck.html"><b>6</b>Re-check</a>
+    </nav>
+    <h2>Step 6 · Re-check</h2>
+    <p class="say"><b>On stage:</b> run the check again with the Shield on. Same 300 visitors, no failed requests, good score.</p>
+    <p class="hint" id="caption">The check replays the same spike. This time the database only ever sees 20 people at once.</p>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <section class="card">
+        <div class="card-head"><h2>Check</h2><button class="btn" id="checkBtn" type="button">Run check</button></div>
+        <div class="urlrow"><input type="url" id="appUrl" value="http://localhost:4174" aria-label="App URL" /></div>
+        <div class="progress" id="checkProgress" hidden><i></i></div>
+        <div class="score" id="scoreBox" hidden>
+          <div class="score-ring" id="scoreRing" style="--pct:0; --ring: var(--admit)"><span class="num" id="scoreNum">0</span></div>
+          <div class="score-text"><b id="scoreTitle">Protected</b><span class="muted" id="scoreSub"></span></div>
+        </div>
+        <div class="findings" id="findings" hidden></div>
+        <p class="hint" id="checkHint">Same check, same spike, with the Shield on.</p>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Shield</h2><span class="pill ok" id="shieldPill"><i></i>On · threshold 20</span></div>
+        <div class="field"><label for="threshold"><span>Threshold</span></label><input type="number" id="threshold" min="1" max="500" value="20" /></div>
+      </section>
+    </div>
+    <div class="col col-mid">
+      <section class="card">
+        <div class="card-head"><h2>Live during the re-check</h2><span class="muted num" style="font-size:13px" id="clock">00:00</span></div>
+        <div class="stats">
+          <div class="stat admit"><span class="k">Active in the app</span><span class="v num" id="sActive">20</span></div>
+          <div class="stat queue"><span class="k">In line</span><span class="v num" id="sQueued">0</span></div>
+          <div class="stat" id="sErrBox"><span class="k">Failed requests</span><span class="v num" id="sErr">0%</span></div>
+          <div class="stat"><span class="k">Emails captured</span><span class="v num" id="sEmails">0</span></div>
+        </div>
+        <canvas class="chart" id="chart" width="1200" height="520" role="img" aria-label="The re-check spike: active flat at the threshold, no failed requests"></canvas>
+        <div class="legend"><span><i style="background:var(--admit)"></i>Active in the app</span><span><i style="background:var(--queue)"></i>In line</span><span><i style="background:var(--down)"></i>Failed requests</span><span><i style="background:var(--ink-2)"></i>Threshold</span></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Before and after</h2></div>
+        <div class="calls">
+          <div class="row bad"><span><b>Without the Shield</b> · score 31</span><span class="num muted">breaks at 24</span><span class="pill bad">95% failed at 300</span></div>
+          <div class="row"><span><b>With the Shield</b> · score 91</span><span class="num muted">threshold 20</span><span class="pill ok">0% failed at 300</span></div>
+        </div>
+        <p class="hint">The code did not change. The queue in front of it did. The fix prompts from step 1 are still there for when there is time.</p>
+      </section>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a class="btn" href="05-quiet.html">← Step 5</a>
+    <span class="spacer"></span>
+    <button class="btn" id="replayBtn" type="button">Replay</button>
+    <a class="btn btn-primary" href="index.html">Back to the landing →</a>
+  </nav>
+</div>
+<script src="sim.js"></script>
+</body>
+</html>

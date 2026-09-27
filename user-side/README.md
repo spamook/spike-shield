@@ -1,8 +1,8 @@
-# user-side: Idea Roaster (Fake App + local Supabase) and the Shield service
+# user-side: Idea Roaster (Fake App + local Supabase) and the Shield
 
 The customer's side of the demo: a copy of a typical Lovable app that breaks under a small spike
-for clear reasons, plus the Shield service that keeps it up. Spec:
-[fakeapp-scripts-work.md](../fakeapp-scripts-work.md). Roles, ports and the API contract:
+for clear reasons, plus the Shield that keeps it up. Spec:
+[fakeapp-scripts-work.md](../fakeapp-scripts-work.md). Roles, ports and the contract:
 [team-plan.md](../team-plan.md).
 
 ```
@@ -10,7 +10,7 @@ user-side/
 ├─ supabase/          # config, migrations, seed, functions
 ├─ src/, index.html   # Fake App (Vite + React)
 ├─ shield/            # Shield service on :8090 (its own package.json, run with tsx)
-│  ├─ server.ts       # admit, waitlist, config, stats, serves public/
+│  ├─ server.ts       # admit, leave, config, stats, serves public/
 │  ├─ admit.ts        # admit logic (in memory)
 │  └─ public/shield.js
 └─ scripts/           # start.sh, cap.sh, spike.js
@@ -26,20 +26,17 @@ Prerequisites: Node 20+, Docker Desktop running, git. The Supabase CLI is a dev 
 ```
 
 It runs `npm install`, `supabase start`, `supabase db reset` (schema + seed, a minute or two),
-`scripts/cap.sh`, writes `.env` from the running instance, starts the Shield service in the
-background, then builds and serves the app twice: without the Shield and with it. Ctrl+C stops
-both apps and the Shield service.
+`scripts/cap.sh`, writes `.env` from the running instance, starts the Shield service, builds
+the app twice and serves both builds. Ctrl+C stops the app servers and the Shield service.
 
 | Service | URL |
 |---|---|
-| Fake App without the Shield (`vite preview`) | http://localhost:4173 |
-| Fake App with the Shield (`vite preview`) | http://localhost:4174 |
-| Shield service (`shield.js`, admit, waitlist, config, stats) | http://localhost:8090 |
+| Fake App without the Shield | http://localhost:4173 |
+| Fake App with the Shield | http://localhost:4174 |
+| Shield service (`shield.js`, admit, leave, config, stats) | http://localhost:8090 |
 | Supabase API (REST, RPC, Edge Functions) | http://localhost:54321 |
 | Supabase Studio | http://localhost:54323 |
 | Site id | `idea-roaster` |
-
-To run only the Shield service: `cd user-side/shield && npm install && npm start`.
 
 Anon key (the local default, the same on every machine; `start.sh` re-reads it from
 `supabase status`):
@@ -65,93 +62,102 @@ Pages:
 - `/idea/:id` Detail: full idea text, vote count and a "Roast this idea" button.
 
 Stack: Vite 5 + React + TypeScript + `@supabase/supabase-js`, served as a production build with
-`vite preview`, like Lovable's CDN. The Supabase URL, anon key and every call pattern
-(`.from("posts")`, `.select("*, author:profiles(*)")`, `invoke("ai-summary")`) are visible in the
-JS bundle, which is what the check's Analyze step reads.
+`vite preview`, like Lovable's CDN.
 
-## Intentional weak points
+### Two builds
 
-| # | Weak point | Where | Fix branch |
+The demo serves the app without and with the Shield at the same time, so nothing is switched or
+rebuilt live. Both builds come from the same code:
+
+```bash
+npm run build -- --outDir dist-plain             # without the Shield -> :4173
+SHIELD=1 npm run build -- --outDir dist-shield   # with the Shield    -> :4174
+```
+
+With `SHIELD=1` a small plugin in `vite.config.ts` adds the install prompt's script tag as the
+first script in `<head>`. `src/main.tsx` always waits for `window.SpikeShield?.ready`; without the
+script it starts at once. These are the two changes the install prompt makes (the `shield` branch
+shows them as a plain diff).
+
+### Page states
+
+The rush tester reads what each visitor sees from `<body data-state>`:
+
+- `loading`: the app is starting or waiting for the feed (set in `index.html`)
+- `ready`: the feed rendered with data
+- `error`: a Supabase call failed; the page also shows "Something went wrong"
+
+The waiting page from `shield.js` has `id="spike-shield"`, which the tester checks first.
+
+### Intentional weak points
+
+| # | Weak point | Where | Fix branch (stretch) |
 |---|---|---|---|
 | 1 | Heavy feed query: 200 posts, `select *` with the long `body`, joined with the author, ordered by `created_at` without an index | `src/pages/Feed.tsx` | `fix/feed` |
-| 2 | N+1 vote counts: one `HEAD` request per post for the first 20 posts, `votes.post_id` has no index so each one scans 500k rows | `src/pages/Feed.tsx` | `fix/votes` |
+| 2 | N+1 vote counts: one `HEAD` request per post for the first 20 posts, all at the same moment; `votes.post_id` has no index so each one scans 500k rows | `src/pages/Feed.tsx` | `fix/votes` |
 | 3 | AI call on every page load: the "Idea of the day" card calls the `ai-summary` Edge Function (2 s simulated latency, no cache) on every feed load | `src/pages/Feed.tsx`, `supabase/functions/ai-summary` | `fix/ai` |
 
 Schema: `supabase/migrations/20260926000000_init.sql` (no index on `posts(created_at)` or
 `votes(post_id)`). Seed: `supabase/seed.sql` (1,000 profiles, 100,000 posts, 500,000 votes).
 
-## Journey
-
-The calls one visitor makes on the feed, in order, recorded from the built app's Network tab.
-This is the source for `service-side/journeys/idea-roaster.json`.
-
-| # | Call | Notes |
-|---|---|---|
-| 1 | `GET http://localhost:4173/` | the page, then its JS and CSS from the same origin |
-| 2 | `POST http://localhost:8090/shield/admit` | `:4174` build only, before anything else; body `{"siteId":"idea-roaster","sessionId":"<uuid>"}` |
-| 3 | `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200` | ~300 KB response |
-| 4 | `HEAD /rest/v1/votes?select=*&post_id=eq.<id>` × 20 | **all 20 at the same moment**, right after step 3 answers; header `Prefer: count=exact`, count comes back in `Content-Range` |
-| 5 | `POST /functions/v1/ai-summary` | **at the same moment as step 4**; body `{"post_id":<id of the newest post>}`, ~2 s |
-
-Steps 4 and 5 go out together (21 requests in one burst) as soon as the feed response arrives.
-Every Supabase call sends `apikey: <anon key>` and `Authorization: Bearer <anon key>`. The
-browser sends a CORS preflight (`OPTIONS`) before each of them; the load test can skip those.
-Query parameter order does not matter to PostgREST (`post_id=eq.1&select=*` is the same call).
-
-The detail page adds: `GET /rest/v1/posts?select=*,author:profiles(*)&id=eq.<id>`
-(`Accept: application/vnd.pgrst.object+json`), one `HEAD` vote count, and `POST
-/functions/v1/ai-summary` when the button is clicked.
-
-## Resource caps
-
-`scripts/cap.sh` caps the Supabase containers (db: 1 CPU / 1 GB, rest: 0.5 CPU / 512 MB, edge
-runtime: 0.5 CPU / 512 MB) so Supabase breaks first, at about 80–150 users. The caps reset on
-every Supabase restart; `start.sh` re-applies them. Tune on the demo laptop until the breaking
-point is stable:
-
-```bash
-k6 run -e URL=http://localhost:54321 -e KEY=<anon key> user-side/scripts/spike.js
-```
-
-If it does not break under ~150 users, tighten the caps first, then raise the number of posts with
-vote counts (`VOTE_COUNT_POSTS` in `src/pages/Feed.tsx`).
-
-`supabase/config.toml` disables Realtime, Storage and Analytics to keep the Docker footprint small
-on the demo laptop; Studio stays on.
+Calls the feed makes, in order: `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200`,
+then in one burst `HEAD /rest/v1/votes?select=*&post_id=eq.<id>` × 20 (`Prefer: count=exact`) and
+`POST /functions/v1/ai-summary`. Every call sends `apikey` and `Authorization: Bearer <anon key>`.
 
 ## Shield service
 
 `shield/`, one Node process on `localhost:8090` (Express, run with `tsx`, no build step). It
-stands in for our CDN and hosted admit service: all state is in memory, a restart clears it.
+stands in for our CDN and hosted admit service: all state is in memory, a restart clears it. It
+starts with `idea-roaster` enabled and the threshold from the `THRESHOLD` env var (default 10).
+Only the `:4174` build loads the script, so the Shield can stay on all the time.
 
 | Method | Path | Used by | What |
 |---|---|---|---|
-| GET | `/shield.js` | Fake App | Static file from `shield/public/` |
-| POST | `/shield/admit` | `shield.js`, Tester replay | `{ siteId, sessionId }` → `{ status: "admitted" }` or `{ status: "queued", position }` |
-| POST | `/shield/waitlist` | `shield.js` | `{ siteId, sessionId, email }` → `204` |
-| PUT | `/shield/config` | Tester Backend | `{ siteId, enabled, threshold }` → `204` |
-| GET | `/shield/stats?siteId=…` | Tester Backend | `{ enabled, threshold, active, queued, emails, notices }` |
+| GET | `/shield.js` | Fake App (`:4174`) | Static file from `shield/public/` |
+| POST | `/shield/admit` | `shield.js` | `{ siteId, sessionId }` → `{ status: "admitted" }` or `{ status: "queued", position }` |
+| POST | `/shield/leave` | `shield.js` (`sendBeacon`, `text/plain`) | `{ siteId, sessionId }` → `204`, the session is dropped at once |
+| PUT | `/shield/config` | us, for tuning | `{ siteId, enabled, threshold }` → `204` |
+| GET | `/shield/stats?siteId=…` | Tester dashboard | `{ enabled, threshold, active, queued }` |
 
-A new site starts disabled with threshold 30, so the Shield does nothing until the Tester
-dashboard turns it on. Sessions not seen for 30 s are dropped. "You're in" emails are not sent
-in the demo; they appear as `notices` in the stats.
+Sessions not seen for 30 s are dropped; a closed tab sends "leave" and frees its place at once (a
+reload counts as leaving too, so don't reload while demoing the waiting page).
+
+To run only the Shield service: `cd user-side/shield && npm install && THRESHOLD=10 npm start`.
 
 Contract test:
 
 ```bash
 curl -X PUT localhost:8090/shield/config -H "content-type: application/json" -d '{"siteId":"idea-roaster","enabled":true,"threshold":2}'
 curl -X POST localhost:8090/shield/admit -H "content-type: application/json" -d '{"siteId":"idea-roaster","sessionId":"a"}'
+curl -X POST localhost:8090/shield/leave -H "content-type: text/plain" -d '{"siteId":"idea-roaster","sessionId":"a"}'
 curl "localhost:8090/shield/stats?siteId=idea-roaster"
 ```
 
-With threshold 2, the third new session is queued.
+With threshold 2, the third new session is queued. After a leave, the next queued session is
+admitted on its next retry.
+
+## Resource caps
+
+`scripts/cap.sh` caps the Supabase containers (db: 1 CPU / 1 GB, rest: 0.5 CPU / 512 MB, edge
+runtime: 0.5 CPU / 512 MB). The rush tester runs real browsers on the same laptop, so the caps
+must make the app break at about 20–30 visitors at the same time and stay healthy at the Shield
+threshold (10). The caps reset on every Supabase restart; `start.sh` re-applies them. Tune on the
+demo laptop, roughly with k6 first, then with the rush tester:
+
+```bash
+k6 run -e URL=http://localhost:54321 -e KEY=<anon key> user-side/scripts/spike.js
+```
+
+If it does not break at the planned number, tighten the caps first, then raise the number of
+posts with vote counts (`VOTE_COUNT_POSTS` in `src/pages/Feed.tsx`).
+
+`supabase/config.toml` disables Realtime, Storage and Analytics to keep the Docker footprint small
+on the demo laptop; Studio stays on.
 
 ## Branches
 
-- The Shield install (script tag inserted by the `spike-shield` Vite plugin, `main.tsx` waiting on
-  `window.SpikeShield.ready`) is on `main`, toggled by the `SHIELD` build flag in
-  `vite.config.ts`, not on a separate branch. The script itself is `shield/public/shield.js`,
-  served by the Shield service at `http://localhost:8090/shield.js`.
-- `fix/feed`, `fix/votes`, `fix/ai`: each one applies one fix prompt from the spec and adds a
-  migration. Switch with `git checkout <branch>`, then `npm run build` and, for the fix branches,
-  `npx supabase db reset` to apply the new migration.
+- `shield`: the two install-prompt changes as a plain diff (script tag in `index.html`, wait in
+  `main.tsx`). The demo itself uses the `:4174` build instead of switching branches.
+- `fix/feed`, `fix/votes`, `fix/ai` (stretch): each one applies one fix prompt from the spec and
+  adds a migration. Switch with `git checkout <branch>`, rebuild, and run `npx supabase db reset`
+  to apply the new migration.
