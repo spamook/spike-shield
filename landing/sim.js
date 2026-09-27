@@ -51,8 +51,11 @@
       var e = email();
       if (S.emails.indexOf(e) < 0) { S.emails.push(e); if (!S.silent) renderEmail(e, true); }
     }
+    // as the line drains, the people who left an email get "you're in", a few per second
     var pending = S.emails.length - S.notices.length;
-    if (pending > 0 && queued < S.emails.length - S.notices.length && Math.random() < 0.6) {
+    var draining = queued < (S.prevQueued == null ? queued : S.prevQueued);
+    S.prevQueued = queued;
+    if (pending > 0 && (draining || queued === 0) && Math.random() < 0.7) {
       var who = S.emails[S.notices.length];
       S.notices.push(who); if (!S.silent) renderNotice(who, true);
     }
@@ -188,7 +191,7 @@
         if (el.threshold) { el.threshold.value = THRESHOLD; S.threshold = THRESHOLD; if (el.thrFrom) el.thrFrom.hidden = false; }
       }
       if (done) done();
-    }, 110);
+    }, 200);
   }
   if (el.checkBtn) el.checkBtn.addEventListener("click", function () { runCheck(); });
   if (el.findings) el.findings.addEventListener("click", function (e) {
@@ -245,7 +248,7 @@
       S.installed = true; S.threshold = THRESHOLD; S.shieldOn = true; setTarget(20); warm(40);
       if (el.shieldPill) { el.shieldPill.className = "pill ok"; el.shieldPill.innerHTML = "<i></i>On · threshold " + THRESHOLD; }
       if (el.threshold) el.threshold.value = THRESHOLD;
-      later(700, function () { setTarget(300); runCheck(function () { setTarget(20); }); });
+      later(700, function () { setTarget(300); S.visitors = 300; runCheck(function () { later(2500, function () { setTarget(20); }); }); });
     }
   };
 
