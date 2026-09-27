@@ -1,322 +1,208 @@
-# Tester Side: Check, Load, Dashboard
+# Tester Side: Rush Tester
 
-Work spec for the Tester side (`service-side/`). See [team-plan.md](team-plan.md) for roles, ports and the API contract, [fakeapp-scripts-work.md](fakeapp-scripts-work.md) for the Target side, and [spike-shield.md](spike-shield.md) for the product.
+Work spec for the Tester side (`tester/`). See [team-plan.md](team-plan.md) for roles, ports and the contract, [fakeapp-scripts-work.md](fakeapp-scripts-work.md) for the Target side, and [spike-shield.md](spike-shield.md) for the product.
 
 ## Goal
 
-One Node process on `localhost:8080` that stands in for the Spike Shield cloud, except the Shield service (`user-side/shield/`, port 8090, built by the Target side):
+A rush tester built only for the Fake App, to show the Shield working. It is not part of the product.
 
-- The check: analyze, replay, diagnose. It spike-tests the customer's service: virtual visitors do what real visitors' browsers do, and we find how many people at the same time it takes to break the app.
-- The load engine: virtual users whose number can be changed while they run.
-- The dashboard for the builder (our customer), and a demo panel for us.
-- The link to the Shield service: sends the Shield config and polls its stats for the dashboard.
+- Real browsers (Playwright) visit the Fake App like a spike of real visitors. They load the page, so they run `shield.js` and get queued like real visitors would. Plain HTTP requests would skip the script.
+- Its dashboard shows the two runs:
+  - Without the Shield (`:4173`): many failed requests.
+  - With the Shield (`:4174`): no failed requests, and part of the visitors wait in the queue.
 
-No login. There is one site, `idea-roaster`, and anyone who opens `localhost:8080` sees it.
+One Node process on `localhost:8080`: the runner, an HTTP API, a WebSocket, and the dashboard.
 
-No Playwright in the demo. The journey (the calls one visitor makes) is hand-written from the Fake App.
+There is no tester flag in `shield.js`: virtual visitors get exactly what real visitors get. In the demo we also open `:4174` in our own browser during the second run, wait on the waiting page and get in. Virtual visitors leave the line often enough (see Virtual visitor) that this takes about 20–30 seconds.
 
 ## Stack
 
 - Node 20+, TypeScript run with `tsx` (no build step)
+- Playwright (Chromium only)
 - Express for HTTP, `ws` for the WebSocket
-- `undici` for the load (fast HTTP client with a connection pool)
-- `better-sqlite3` for check results. If it fails to install on Windows, save JSON files instead.
-- Frontend: Vite + React + TypeScript in `web/`, Recharts for charts, live data over the WebSocket.
+- Frontend: Vite + React + TypeScript in `web/`, Recharts for charts
+- No database. Run summaries are kept in memory and written to `runs.json`, so a reload keeps them.
 
 ```bash
-cd service-side
+cd tester
 npm init -y
-npm install express ws undici better-sqlite3
-npm install -D tsx typescript @types/express @types/ws @types/better-sqlite3
+npm install express ws playwright
+npm install -D tsx typescript @types/express @types/ws
+npx playwright install chromium
 
 npm create vite@latest web -- --template react-ts
-cd web && npm install recharts react-router-dom
+cd web && npm install recharts
 ```
 
-- `package.json`: `"start": "npm --prefix web run build && tsx src/server.ts"`. Express serves `web/dist`, so the demo still runs as one process on 8080.
+- `package.json`: `"start": "npm --prefix web run build && tsx src/server.ts"`. Express serves `web/dist`.
 - While building the frontend: `npm run dev` in `web/` (port 5173), with a Vite proxy for `/api` and `/ws` to 8080.
 
 ## Folders
 
 ```
-service-side/
+tester/
 ├─ src/
-│  ├─ server.ts            # Express app, routes, static files, WebSocket
-│  ├─ live.ts              # WebSocket: pushes a tick every second
-│  ├─ shield.ts            # client for the Shield service: config, stats polling
-│  ├─ load/engine.ts       # virtual users with a changeable target → metrics
-│  ├─ check/analyze.ts     # page + bundle → Supabase URL, key, call list
-│  ├─ check/run.ts         # check job: analyze, ramp, diagnose
-│  ├─ check/diagnose.ts    # metrics → score, breaking point, smells, fixes
-│  └─ db.ts                # SQLite
-├─ journeys/idea-roaster.json   # hand-written journey
-└─ web/                    # Vite + React
-   └─ src/
-      ├─ useLive.ts        # WebSocket hook, shared by all pages
-      ├─ CheckPage.tsx     # /        builder: check and report
-      ├─ ShieldPage.tsx    # /shield  builder: Shield switch and live visitors
-      └─ DemoPage.tsx      # /demo    us: traffic control and app health
+│  ├─ server.ts       # Express app, routes, static files, WebSocket
+│  ├─ runner.ts       # the run: ramp, virtual visitors, end
+│  ├─ visitor.ts      # one virtual visitor in its own browser context
+│  ├─ metrics.ts      # per-second buckets and the run summary
+│  └─ shield.ts       # polls the Shield stats
+└─ web/src/
+   ├─ useLive.ts      # WebSocket hook
+   └─ App.tsx         # the one dashboard page
 ```
 
-## HTTP API
+## Run
 
-| Method | Path | Used by | What |
-|---|---|---|---|
-| POST | `/api/checks` | Check page | Start a check: `{ "url": "http://localhost:4173", "maxUsers": 300 }` → `{ "id": "..." }` |
-| GET | `/api/checks/latest` | Check page | Last finished result, for a page reload |
-| PUT | `/api/shield/config` | Shield page | `{ "siteId": "idea-roaster", "enabled": true, "threshold": 30 }`, forwarded to the Shield service's `PUT /shield/config` |
-| POST | `/api/load/start` | Demo panel | Start the load: `{ "url": "http://localhost:4173", "target": 20 }` |
-| PUT | `/api/load` | Demo panel | Change the target: `{ "target": 300 }` |
-| POST | `/api/load/stop` | Demo panel | End all virtual users |
-| WS | `/ws` | All pages | Live data, see below |
+A run has a mode and a number of visitors.
 
-- The admit, waitlist and `shield.js` routes are on the Shield service (port 8090), not here. The browser only talks to 8080; the Backend calls the Shield service server to server.
-- A check runs in the background. `POST /api/checks` returns right away, and progress comes over the WebSocket.
-- One load at a time. Starting a check while the demo load runs returns `409`.
+| Mode | URL |
+|---|---|
+| `without` | `http://localhost:4173` |
+| `with` | `http://localhost:4174` |
 
-WebSocket messages, server to browser (JSON):
+1. Ramp: raise the target from 0 to `users` (default 60) over 20 seconds.
+2. Hold: keep the target for 60 seconds. When a visitor ends, a new one starts in its place, so a steady target is a steady stream of new visitors.
+3. End: stop starting visitors, close all contexts, write the summary.
 
-```ts
-// every second
-{ type: "tick", t: number,
-  shield: ShieldStats | null,                // idea-roaster, also when no load runs
-  load: null | {
-    target: number, users: number, queued: number,
-    rps: number, errorRate: number, p95: number,
-    health: "healthy" | "degraded" | "down",
-    calls: Record<string, { rps: number; errorRate: number; p95: number }>
-  } }
+- Start at most 5 visitors per 100 ms, so the browser isn't flooded.
+- One run at a time. Starting a second one returns `409`.
+- Hard limit: `MAX_VISITORS = 60`. The runner never starts more, whatever the dashboard sends.
+- Scale test step by step (10 → 20 → 40 → 60) with Task Manager open. CPU fills up before memory (32 GB is enough), so check that the dashboard and our own browser stay smooth.
 
-// when a check changes step or finishes
-{ type: "check", id: string, step: "analyze" | "replay" | "diagnose" | "done",
-  progress: number, result?: Result }
-```
+## Virtual visitor
 
-- Health: down if the error rate is over 5% or p95 over 3000 ms (the breaking-point limits), degraded at half of those, else healthy.
+Each visitor gets its own browser context, so it has its own `localStorage` and so its own Shield session id.
 
-## Shield service link
-
-The admit service and the waitlist live in the Shield service (`user-side/shield/`, port 8090, built by the Target side). Contract in team-plan. This side only talks to it.
+1. Open the page.
+2. Watch the page state every 500 ms (contract in team-plan):
+   - `#spike-shield` exists → `queued`
+   - `body[data-state]` is `loading`, `ready` or `error`
+3. Stay 30 seconds after the state first becomes `ready` or `error` (the visitor reading the page), then close.
+4. On the waiting page, like real visitors:
+   - 50%: leave at once (stands in for "left an email and went away").
+   - 50%: wait. `shield.js` lets them in when a slot frees up, and then step 3 applies. Not admitted within 20 seconds → give up and leave.
+   - Either way the visitor counts as "sent to the waiting page". Its app code never runs, so it never hits Supabase. Virtual visitors never type an email.
+5. Close: go to `about:blank` first, so `pagehide` fires and `shield.js` sends "leave". Without it the Shield keeps the session for 30 seconds, and people behind it wait longer.
+6. Not `ready` within 15 seconds of leaving the queue (or of opening the page, without the Shield) → counted as `timeout`.
 
 ```ts
-// src/shield.ts
-const SHIELD = "http://localhost:8090";
+// src/visitor.ts (core)
+const SUPABASE = "http://localhost:54321";
 
-export type ShieldStats = {
-  enabled: boolean; threshold: number;
-  active: number; queued: number; emails: number; notices: string[];
-};
+export async function visit(browser: Browser, url: string, m: Metrics, stop: AbortSignal) {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.route("**/*.{png,jpg,jpeg,svg,woff,woff2}", (r) => r.abort());   // save CPU
 
-export async function setConfig(siteId: string, enabled: boolean, threshold: number) {
-  await fetch(`${SHIELD}/shield/config`, {
-    method: "PUT",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ siteId, enabled, threshold }),
+  const started = new Map<Request, number>();
+  page.on("request", (r) => { if (r.url().startsWith(SUPABASE)) started.set(r, performance.now()); });
+  page.on("requestfinished", async (r) => {
+    const t0 = started.get(r); if (t0 === undefined) return;
+    started.delete(r);
+    const res = await r.response();
+    m.request(res?.status() ?? 0, performance.now() - t0);
   });
-}
+  page.on("requestfailed", (r) => {
+    const t0 = started.get(r); if (t0 === undefined) return;
+    started.delete(r);
+    m.request(0, performance.now() - t0);
+  });
 
-export async function getStats(siteId: string): Promise<ShieldStats | null> {
   try {
-    const r = await fetch(`${SHIELD}/shield/stats?siteId=${siteId}`, { signal: AbortSignal.timeout(500) });
-    return await r.json();
-  } catch {
-    return null;   // Shield service not running: the dashboard shows "offline"
+    await page.goto(url, { timeout: 15_000 });
+    // poll the state, update m.state(...), stay or leave as described above
+  } finally {
+    await page.goto("about:blank").catch(() => {});   // fires pagehide → shield.js sends leave
+    for (const t0 of started.values()) m.request(0, performance.now() - t0);   // still pending = failed
+    await ctx.close();
   }
 }
 ```
 
-- `live.ts` calls `getStats("idea-roaster")` once a second and puts the answer in the tick.
-- Until the Target side has pushed the Shield service, run a stub that answers the same contract, or copy `admit.ts` from the Target spec.
+- Only requests to Supabase count. The page, `shield.js` and admit calls are not the app's database.
+- A failed request is status 0 (connection error, timeout, still pending at the end) or 5xx.
+- A Supabase request with no answer after 10 seconds counts as failed. The browser would wait longer, but a real visitor has already left.
 
-## Check
+## Metrics
 
-A check is a background job with these steps. The dashboard shows which step is running.
-
-### 1. Analyze
-
-Input: the app URL. Output: Supabase URL, anon key, and the list of calls in the code.
-
-1. `GET` the page. Collect `<script src="...">` URLs (Vite builds to `/assets/index-<hash>.js`).
-2. `GET` each script.
-3. Extract with regexes. Vite puts env values into the bundle as plain strings, and minifiers keep method names, so these still match:
-
-   | What | Regex |
-   |---|---|
-   | Anon key (JWT) | `/eyJ[\w-]+\.[\w-]+\.[\w-]+/` |
-   | Supabase URL | `/["'](https?:\/\/[^"']*(?:supabase\.co\|:54321))\/?["']/` |
-   | Tables | `/\.from\(["']([\w-]+)["']\)/g` |
-   | RPCs | `/\.rpc\(["']([\w-]+)["']/g` |
-   | Edge Functions | `/functions\.invoke\(["']([\w-]+)["']/g` |
-   | `select *` | `/\.select\(["']\*/g` |
-
-4. If the URL or key isn't found, fall back to the values in `journeys/idea-roaster.json`.
-
-### 2. Journey
-
-The calls one visitor makes, in `journeys/idea-roaster.json`. Written by hand from the Fake App's journey list (Target spec) and checked once against the browser's Network tab.
-
-- A visitor first opens the page (`GET` of the app URL), then `shield.js` calls admit, then the app makes its Supabase calls.
-- Keep the order and the repeats.
-- Requests the browser sends at the same moment go into one step with `"times": 20, "together": true`. The engine sends them all at once, like the browser does. Sent one by one, they would put far less pressure on the backend than a real visitor, and the breaking point would come out too high.
-- Step names are templates (`eq.123` → `eq.:id`), so repeats group together in the results.
-
-```json
-{
-  "siteId": "idea-roaster",
-  "supabaseUrl": "http://localhost:54321",
-  "anonKey": "eyJ...",
-  "steps": [
-    { "name": "GET page", "method": "GET", "url": "http://localhost:4173/", "headers": {}, "body": null },
-    { "name": "POST shield/admit", "method": "POST", "url": "http://localhost:8090/shield/admit", "headers": { "content-type": "application/json" }, "body": "{}" },
-    { "name": "GET posts", "method": "GET", "url": "http://localhost:54321/rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200", "headers": { "apikey": "eyJ...", "authorization": "Bearer eyJ..." }, "body": null },
-    { "name": "HEAD votes", "method": "HEAD", "url": "http://localhost:54321/rest/v1/votes?post_id=eq.1&select=*", "headers": { "apikey": "eyJ...", "authorization": "Bearer eyJ...", "prefer": "count=exact" }, "body": null, "times": 20, "together": true }
-  ]
-}
-```
-
-Known limits of a hand-written journey (the Fake App has neither, so the demo is not affected):
-
-- Retries: some apps re-send a failed request automatically, so under a spike they get even more load. Virtual users don't retry, so such an app could break a bit earlier than we measure.
-- Realtime: a live Supabase connection for instant updates is not a normal request, so it can't be in the journey.
-
-### 3. Replay (load engine)
-
-Input: the journey and a target number of users. Output: metrics per second.
-
-`src/load/engine.ts`. The check and the demo panel share it. The check moves the target from 10 to `maxUsers` (default 300) over 60 seconds, then stops. The demo panel sets the target by hand.
-
-- `setTarget(n)` can be called at any time.
-- Every 100 ms: if live users are below the target, start new ones until they match. If above, the newest users end after their current step.
-- Each virtual user:
-  1. Gets its own `sessionId` (`crypto.randomUUID()`).
-  2. Runs the steps in order, starting with the page load. A step with `together` sends all its `times` requests at once and waits for all of them before the next step.
-  3. On the admit step: sends `{ siteId, sessionId }`. If queued, waits 5 seconds and retries until admitted or it ends. Once admitted, sends a heartbeat every 10 seconds until it ends.
-  4. Stays for 30 seconds (the visitor reading the page), then ends. The engine starts a new one in its place, so a steady target means a steady stream of new visitors.
-- The journey always has the admit step. With the Shield off, admit answers "admitted" at once, so the same load works before and after the Shield is turned on.
-- Only while the Shield is on do virtual users spend time queued. Queued users never hit Supabase, which is the point.
-
-```ts
-// src/load/engine.ts (core)
-const agent = new Agent({ connections: 1000, headersTimeout: 10_000, bodyTimeout: 10_000 });
-
-async function send(step: Step, body = step.body) {
-  const t0 = performance.now();
-  try {
-    const res = await request(step.url, { method: step.method, headers: step.headers, body, dispatcher: agent });
-    const text = await res.body.text();
-    record(step.name, res.statusCode, performance.now() - t0);
-    return { status: res.statusCode, text };
-  } catch {
-    record(step.name, 0, performance.now() - t0);   // 0 = timeout or connection error
-    return { status: 0, text: "" };
-  }
-}
-
-async function runStep(step: Step) {
-  const n = step.times ?? 1;
-  if (step.together) return Promise.all(Array.from({ length: n }, () => send(step)));
-  for (let i = 0; i < n; i++) await send(step);
-}
-```
-
-Metrics, one bucket per second:
+One bucket per second:
 
 ```ts
 type Bucket = {
-  t: number;              // seconds since start
-  target: number;         // target users
-  users: number;          // live virtual users
-  queued: number;         // of those, waiting in the Shield queue
-  calls: Record<string, { count: number; errors: number; latencies: number[] }>;
+  t: number;                       // seconds since the run started
+  target: number;
+  visitors: { loading: number; queued: number; ready: number; error: number };
+  requests: { ok: number; failed: number };
+  p95: number;                     // Supabase latency, ms
 };
 ```
 
-- An error is status 0 (timeout or connection error) or 5xx.
-- Each finished bucket goes to the check job (if one runs) and to `live.ts`, which sends it as the `load` part of the tick.
+Run summary:
 
-### 4. Diagnose
+```ts
+type Summary = {
+  mode: "without" | "with";
+  users: number;
+  requests: number; failed: number;          // failed / requests = failure rate
+  visitors: number;                          // all visitors started in the run
+  sawError: number;                          // ended in error or timeout
+  wasQueued: number;                         // saw the waiting page at least once
+  gaveUp: number;                            // left the waiting page without getting in
+  maxQueued: number;
+  p95: number;
+};
+```
 
-Input: buckets, the journey, the analyze result. Output: the result the dashboard shows.
+## HTTP API and WebSocket
 
-- Breaking point: `users` in the first bucket where the error rate goes above 5% or p95 goes above 3000 ms, across all Supabase calls. If no bucket crosses, it's "didn't break up to `maxUsers`". Show it as "breaks at about N people at the same time".
-- Weakest call: the call name that crosses those limits first.
-- Code smells:
+| Method | Path | What |
+|---|---|---|
+| POST | `/api/runs` | Start a run: `{ "mode": "without", "users": 60 }` → `{ "id": "..." }`, `409` if one runs |
+| POST | `/api/runs/stop` | End the run now |
+| GET | `/api/runs` | Last summary per mode |
+| WS | `/ws` | Live data |
 
-  | Smell | Rule | Fix prompt |
-  |---|---|---|
-  | Heavy query | `select=*` in a journey URL, or a response over 100 KB during replay | `fix/feed` |
-  | N+1 | A step with `times` 5 or more, or the same step name 5 or more times in one journey | `fix/votes` |
-  | Function on page load | Any `/functions/v1/` call in the journey | `fix/ai` |
+WebSocket messages, server to browser:
 
-- Score (0–100) = resilience (0–70) + code (0–30):
-  - Resilience = `70 × min(1, breakingPoint / maxUsers)`, or 70 if it didn't break.
-  - Code = `30 − 10 × smells`, minimum 0.
-  - Story for the demo: about 20 before, 70 with the Shield, 100 with the Shield and the fixes.
-- Cost estimate (simplified): for a spike of 10,000 visitors, `Edge Function calls per visitor × 10,000 × $0.01` (the AI calls) plus `other requests × 10,000 × a small fixed price`. Show it as "a 10,000-visitor spike costs about $X".
-- Fix prompts: the texts from the Target spec's Fix prompts, picked by smell. Also add "Turn on Spike Shield" when the app broke.
-- Threshold suggestion for the Shield: 40% of the breaking point, rounded (e.g. breaks at 80 → 30).
+```ts
+// every second, also when no run is going
+{ type: "tick", t: number, run: null | ({ mode: "without" | "with" } & Bucket), shield: ShieldStats | null }
 
-Save the result in SQLite so a page reload keeps it.
+// when a run ends
+{ type: "summary", summary: Summary }
+```
 
-## Dashboard (for the builder)
+`shield.ts` polls `GET http://localhost:8090/shield/stats?siteId=idea-roaster` every second (timeout 500 ms, `null` if the Shield service is down).
 
-What our customer sees. It only shows what Spike Shield can really know: the check report, and the visitors that pass through the admit service. React pages in `web/`, all fed by `useLive()`.
+## Dashboard
 
-Check page (`/`):
+One page at `localhost:8080`, readable from the back of the room: big numbers, few words.
 
-- URL input (default `http://localhost:4173`) and a Run button.
-- While running: current step and a live chart of users and error rate, from the check messages.
-- Result: score, breaking point, weakest call, table per call (count, error rate, p95), smells, fix prompts with a copy button, cost estimate.
-- Button "Use for Shield": sets the threshold suggestion and opens the Shield page.
-
-Shield page (`/shield`):
-
-- On/off switch and threshold input for `idea-roaster` (`PUT /api/shield/config`). Changes apply at once, also in the middle of a spike.
-- Live chart of the last 2 minutes: active and queued visitors stacked, with the threshold as a line.
-- Numbers: active, queued, emails captured, and the latest "you're in" notices.
-- During the spike with the Shield on, "active" stays flat at the threshold line while "queued" grows. That's the moment to point at in the demo.
-
-## Demo panel (for us)
-
-`/demo`. Not part of the product: it stands in for the internet sending a spike. Open it next to the Shield page during the pitch.
-
-- Traffic slider 0–500 and preset buttons: Quiet (20), Launch (300), Viral (500), Stop. The first press starts the load (`POST /api/load/start`), later changes call `PUT /api/load`.
-- Big health badge: healthy, degraded, down.
-- Live charts of the last 2 minutes: target vs. live users, error rate, p95.
-- Table per call: rps, error rate, p95. The weakest call turns red first.
-
-## Demo script
-
-1. Check page: run the check. Bad score, "breaks at about 80 people at the same time, the feed query fails first". Show the fix prompts.
-2. Demo panel: Quiet. Healthy, the Fake App works.
-3. Launch. The badge goes red, the Fake App shows errors, Supabase Studio shows the load.
-4. Switch the Fake App to the `shield` branch, then turn the Shield on in the Shield page (threshold filled in from the check). Errors drop, active stays flat at the threshold, the queue grows, the Fake App shows the waiting page.
-5. Back to Quiet. The queue drains and the "you're in" notices appear.
-6. Re-check: good score.
+- Controls: visitors input (default 60), buttons "Run without Shield", "Run with Shield", "Stop".
+- Live, during a run:
+  - Big number: failed requests, red when above 0.
+  - Chart of the last 2 minutes: ok and failed requests per second.
+  - Chart of the last 2 minutes: visitors stacked by state (ready, loading, queued, error).
+- Shield card, from the stats: active against the threshold, and queued.
+- Comparison: the last summary of each mode side by side. Failure rate, visitors who saw an error, visitors queued. This is the last screen of the demo.
 
 ## Build order
 
 Each step is testable alone.
 
-1. Server, WebSocket tick and the Shield service link. Test that the config reaches the Shield service (or a stub on 8090):
-   ```bash
-   curl -X PUT localhost:8080/api/shield/config -H "content-type: application/json" -d '{"siteId":"idea-roaster","enabled":true,"threshold":2}'
-   curl "localhost:8090/shield/stats?siteId=idea-roaster"
-   ```
-2. Load engine with `journeys/idea-roaster.json`, the load API and the WebSocket. Test against `user-side` once it's pushed.
-3. `web/` with the Demo panel and the Shield page. This is the core of the demo.
-4. Diagnose and the Check page.
-5. Analyze: read the Supabase URL and key from the bundle instead of the JSON file.
+1. Scale test first. `runner.ts` and `visitor.ts` with a fixed number of visitors, results in the console. Run it against the Fake App (or any local page) on the demo laptop, with Supabase running, and find how many visitors the laptop handles. Tell the Target side the number: it must be at least 60, twice the breaking point (20–30). If it is lower, the Target side tightens the caps.
+2. Metrics, the API and the WebSocket.
+3. The dashboard.
+4. Run both modes against the real Fake App and the Shield, and tune `users` with the Target side.
 
-If time runs out, step 5 can be cut. The demo still works with the hand-written journey, and the pitch describes it.
+If the laptop runs too few browsers, lower `users` and tighten the Supabase caps rather than dropping Playwright.
 
 ## Checklist
 
-1. The Shield page switch reaches the Shield service, and its stats show in the tick
-2. The load breaks the Fake App at a stable number of users with the Shield off
-3. Turning the Shield on in the middle of a spike brings Supabase errors to zero within a few seconds, with active users flat at the threshold
-4. Moving the demo slider changes the charts within 1–2 seconds
-5. Check page shows score, breaking point, weakest call, smells, fix prompts, cost
-6. Shield page shows live numbers and "you're in" notices
-7. The hand-written journey matches the Fake App's Network tab, and analyze works on the Fake App (or the JSON values are ready)
-8. Full demo run on this laptop, with `start.sh` and `npm start` from a fresh clone
+1. The laptop runs the default number of visitors next to Supabase without the tester itself stalling
+2. "Without Shield" gives a clear number of failed requests at the same `users`, run after run
+3. "With Shield" gives 0 failed requests, with queued visitors and active visitors flat at the threshold
+4. Our own browser on `:4174` shows the waiting page during the second run and gets in within about 20–30 seconds
+5. The comparison shows both runs side by side
+6. Full demo run on this laptop, with `start.sh` and `npm start` from a fresh clone

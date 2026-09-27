@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fake App stub (queued)</title>
+</head>
+<body data-state="loading">
+  <!--
+    Standalone test page for visitor.ts's queued/waiting-page handling.
+    Not part of the Fake App contract (the #spike-shield element is normally
+    injected by shield.js, owned by the Target side) - this is only here so
+    the tester's own runner logic can be exercised without the real Shield.
+  -->
+  <div id="spike-shield">Waiting page stub</div>
+  <div id="content"></div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var admitAfterMs = Number(params.get("admitAfter") || "3000");
+      var api = params.get("api") || "http://localhost:54321";
+
+      setTimeout(function () {
+        var el = document.getElementById("spike-shield");
+        if (el) el.remove();
+        document.body.setAttribute("data-state", "loading");
+
+        fetch(api + "/rest/v1/posts")
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function () {
+            document.body.setAttribute("data-state", "ready");
+            document.getElementById("content").textContent = "Feed loaded.";
+          })
+          .catch(function () {
+            document.body.setAttribute("data-state", "error");
+          });
+      }, admitAfterMs);
+    })();
+  </script>
+</body>
+</html>
