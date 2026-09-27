@@ -133,6 +133,8 @@
   .stat.admit { background: var(--admit-soft); } .stat.admit .v { color: var(--admit); }
   .stat.queue { background: var(--queue-soft); } .stat.queue .v { color: var(--queue); }
   .stat.db .v { color: var(--ink); }
+  .stat.db.over { background: var(--down-soft); } .stat.db.over .v { color: var(--down); }
+  .waiting.down { background: var(--down-soft); border-style: solid; border-color: transparent; }
   canvas.chart { width: 100%; height: 120px; display: block; border-radius: 8px; }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
@@ -232,27 +234,32 @@
 
     <div class="demo" aria-label="Interactive demo of the Shield during a spike">
       <div class="demo-head">
-        <p class="eyebrow">Launch day, live</p>
-        <p class="muted num" style="font-size:13px">Threshold: <b id="thr">120</b> in the app at once</p>
+        <p class="eyebrow">Launch day</p>
+        <p class="muted num" style="font-size:13px">Your database breaks at about <b>150</b> people at once</p>
       </div>
       <div class="slider-row">
-        <label for="visitors"><span>Visitors on your app right now</span><b class="num" id="visitorsOut">180</b></label>
+        <label for="visitors"><span>People on your app at the same time</span><b class="num" id="visitorsOut">180</b></label>
         <input class="slider" type="range" id="visitors" min="0" max="500" value="180" step="5" />
       </div>
-      <div class="stats">
-        <div class="stat admit"><span class="k">In the app</span><span class="v num" id="inApp">120</span></div>
-        <div class="stat queue"><span class="k">In line</span><span class="v num" id="inLine">60</span></div>
-        <div class="stat db"><span class="k">Database load</span><span class="v num" id="dbLoad">100%</span></div>
+      <div class="slider-row">
+        <label for="thrSlider"><span>Threshold: how many you let into the app at once</span><b class="num" id="thrOut">120</b></label>
+        <input class="slider" type="range" id="thrSlider" min="20" max="400" value="120" step="5" />
       </div>
-      <canvas class="chart" id="chart" width="900" height="240" aria-label="Visitors over the day against the threshold" role="img"></canvas>
+      <div class="stats">
+        <div class="stat admit"><span class="k">Let into the app</span><span class="v num" id="inApp">120</span></div>
+        <div class="stat queue"><span class="k">Waiting in line</span><span class="v num" id="inLine">60</span></div>
+        <div class="stat db" id="dbBox"><span class="k">Database at</span><span class="v num" id="dbLoad">80%</span></div>
+      </div>
+      <canvas class="chart" id="chart" width="900" height="240" aria-label="Visitors over launch day against the threshold and the database limit" role="img"></canvas>
       <div class="legend">
         <span><i style="background:var(--admit)"></i>Reaches the app and the database</span>
         <span><i style="background:var(--queue)"></i>Waits on the waiting page</span>
-        <span><i style="background:var(--ink-2)"></i>Threshold</span>
+        <span><i style="background:var(--ink-2)"></i>Your threshold</span>
+        <span><i style="background:var(--down)"></i>Where the database breaks</span>
       </div>
       <div class="waiting on" id="waiting" aria-live="polite">
         <strong id="waitTitle">This app is very popular right now</strong>
-        <span id="waitBody">You're number <b class="num" id="pos">60</b> in line. Keep this tab open, we'll let you in automatically.</span>
+        <span id="waitBody">You're number <b class="num">60</b> in line. Keep this tab open, we'll let you in automatically.</span>
         <small id="waitNote">What visitor 121 sees. The database never hears from them.</small>
       </div>
     </div>
@@ -406,19 +413,21 @@
 
 <script>
 (function () {
+  var BREAK = 150; // where this app's database breaks (what the check measures)
   var THRESHOLD = 120;
   var slider = document.getElementById("visitors");
+  var thrSlider = document.getElementById("thrSlider");
+  var thrOut = document.getElementById("thrOut");
   var out = document.getElementById("visitorsOut");
   var inApp = document.getElementById("inApp");
   var inLine = document.getElementById("inLine");
   var dbLoad = document.getElementById("dbLoad");
+  var dbBox = document.getElementById("dbBox");
   var waiting = document.getElementById("waiting");
   var waitTitle = document.getElementById("waitTitle");
   var waitBody = document.getElementById("waitBody");
   var waitNote = document.getElementById("waitNote");
-  var pos = document.getElementById("pos");
   var canvas = document.getElementById("chart");
-  document.getElementById("thr").textContent = THRESHOLD;
 
   // A launch-day curve: quiet, then the post takes off, then it settles. Peak scales with the slider.
   var shape = [8, 9, 10, 12, 14, 18, 30, 60, 100, 130, 100, 80, 65, 55, 48, 42, 38, 34, 30, 26, 24, 22, 21, 20];
@@ -434,11 +443,12 @@
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
     var padL = 6, padR = 6, padT = 8, padB = 6;
-    var maxY = Math.max(peak, THRESHOLD) * 1.15;
+    var maxY = Math.max(peak, THRESHOLD, BREAK) * 1.15;
     var scaleX = (w - padL - padR) / (shape.length - 1);
     var scaleY = (h - padT - padB) / maxY;
     var pts = shape.map(function (s, i) { return [padL + i * scaleX, h - padB - (s / 130) * peak * scaleY]; });
     var thrY = h - padB - THRESHOLD * scaleY;
+    var breakY = h - padB - BREAK * scaleY;
 
     // admitted area (below the threshold line)
     ctx.beginPath();
@@ -465,27 +475,42 @@
     pts.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
     ctx.lineWidth = 2; ctx.strokeStyle = css("--admit"); ctx.stroke();
 
-    // threshold line
+    // where the database breaks (red, dotted) and your threshold (dashed)
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, breakY); ctx.lineTo(w - padR, breakY);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = css("--down"); ctx.stroke();
     ctx.setLineDash([5, 4]);
     ctx.beginPath(); ctx.moveTo(padL, thrY); ctx.lineTo(w - padR, thrY);
     ctx.lineWidth = 1.5; ctx.strokeStyle = css("--ink-2"); ctx.stroke();
     ctx.setLineDash([]);
 
-    // now marker at the peak
+    // "now" marker at the peak of the day, labelled
     var peakI = shape.indexOf(130);
+    var over = Math.min(peak, THRESHOLD) > BREAK;
     ctx.beginPath(); ctx.arc(pts[peakI][0], pts[peakI][1], 4, 0, Math.PI * 2);
-    ctx.fillStyle = peak > THRESHOLD ? css("--queue") : css("--admit"); ctx.fill();
+    ctx.fillStyle = over ? css("--down") : peak > THRESHOLD ? css("--queue") : css("--admit"); ctx.fill();
+    ctx.font = "11px 'Instrument Sans', sans-serif"; ctx.fillStyle = css("--ink-2"); ctx.textAlign = "left";
+    ctx.fillText("peak: " + peak + " people", pts[peakI][0] + 8, Math.max(pts[peakI][1] - 6, 10));
   }
 
   function update() {
     var v = Number(slider.value);
+    THRESHOLD = Number(thrSlider.value);
+    thrOut.textContent = THRESHOLD;
     var admitted = Math.min(v, THRESHOLD);
     var queued = Math.max(0, v - THRESHOLD);
+    var load = Math.round((admitted / BREAK) * 100);
     out.textContent = v;
     inApp.textContent = admitted;
     inLine.textContent = queued;
-    dbLoad.textContent = Math.round((admitted / THRESHOLD) * 100) + "%";
-    if (queued > 0) {
+    dbLoad.textContent = load + "%";
+    dbBox.className = "stat db" + (load > 100 ? " over" : "");
+    if (load > 100) {
+      waiting.className = "waiting down";
+      waitTitle.textContent = "Something went wrong";
+      waitBody.textContent = "Your threshold lets in more people than the database can take. It breaks at about " + BREAK + ".";
+      waitNote.textContent = "Lower the threshold to " + BREAK + " or less and the app stays up.";
+    } else if (queued > 0) {
       waiting.className = "waiting on";
       waitTitle.textContent = "This app is very popular right now";
       waitBody.innerHTML = 'You\'re number <b class="num">' + queued + '</b> in line. Keep this tab open, we\'ll let you in automatically.';
@@ -494,12 +519,13 @@
       waiting.className = "waiting off";
       waitTitle.textContent = "Everyone is in";
       waitBody.textContent = "Under the threshold the Shield does nothing. The app starts the moment the page loads.";
-      waitNote.textContent = v === 0 ? "A quiet day." : "Database load " + Math.round((admitted / THRESHOLD) * 100) + "%, no one waiting.";
+      waitNote.textContent = v === 0 ? "A quiet day." : "Database at " + load + "% of what it can take, no one waiting.";
     }
     draw(v);
   }
 
   slider.addEventListener("input", update);
+  thrSlider.addEventListener("input", update);
   window.addEventListener("resize", function () { draw(Number(slider.value)); });
   if (window.matchMedia) {
     var mq = window.matchMedia("(prefers-color-scheme: dark)");
