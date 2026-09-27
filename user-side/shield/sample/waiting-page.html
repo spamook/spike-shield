@@ -1,0 +1,155 @@
+<!doctype html>
+<!--
+  Sample of the waiting page with the email form (Shield plan), fully drawn as static HTML.
+  For showing what visitors see; the demo does not load it. The live page is built by
+  showWaitingPage() in ../public/shield.js. Open this file directly in a browser.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Waiting Room Sample</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" />
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #f4f6f5;
+    --surface: #ffffff;
+    --surface-2: #e9efec;
+    --ink: #101c2a;
+    --ink-2: #4a5966;
+    --line: #d6dedb;
+    --admit: #0b8f6e;
+    --admit-soft: #d7f2e8;
+    --queue: #e0951f;
+    --queue-soft: #fbedd0;
+    --shadow: 0 1px 2px rgba(16, 28, 42, 0.06), 0 12px 32px -16px rgba(16, 28, 42, 0.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #0e161e;
+      --surface: #16212b;
+      --surface-2: #1f2c38;
+      --ink: #eef3f6;
+      --ink-2: #a3b1bc;
+      --line: #2c3a47;
+      --admit: #34c79a;
+      --admit-soft: #143a30;
+      --queue: #f0b24a;
+      --queue-soft: #3d2f12;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #0e161e;
+    --surface: #16212b;
+    --surface-2: #1f2c38;
+    --ink: #eef3f6;
+    --ink-2: #a3b1bc;
+    --line: #2c3a47;
+    --admit: #34c79a;
+    --admit-soft: #143a30;
+    --queue: #f0b24a;
+    --queue-soft: #3d2f12;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  h1 { font-family: "Bricolage Grotesque", "Instrument Sans", system-ui, sans-serif; font-size: 26px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  p { margin: 0; }
+  .muted { color: var(--ink-2); }
+
+  .card { width: 100%; max-width: 440px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 28px; display: grid; gap: 22px; }
+  .app { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+  .app-mark { width: 28px; height: 28px; border-radius: 8px; background: var(--ink); color: var(--ground); display: grid; place-items: center; font-size: 15px; }
+
+  .spot { background: var(--queue-soft); border-radius: 14px; padding: 18px 20px; display: grid; gap: 12px; }
+  .spot-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .spot-k { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--queue); }
+  .spot-v { font-family: "Bricolage Grotesque", sans-serif; font-size: 48px; font-weight: 800; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; border-radius: 4px; background: var(--surface); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 62%; border-radius: 4px; background: var(--queue); }
+  .spot-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--ink-2); }
+  .live { display: inline-flex; align-items: center; gap: 6px; }
+  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--admit); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+
+  .notify { border-top: 1px solid var(--line); padding-top: 22px; display: grid; gap: 12px; }
+  .notify h2 { font-size: 16px; font-weight: 600; margin: 0; font-family: inherit; }
+  form { display: flex; gap: 8px; }
+  input[type="email"] { flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); }
+  input[type="email"]:focus-visible, button:focus-visible { outline: 3px solid var(--admit); outline-offset: 2px; }
+  button { font: inherit; font-weight: 600; padding: 11px 18px; border-radius: 10px; border: 0; background: var(--ink); color: var(--ground); cursor: pointer; white-space: nowrap; }
+  @media (max-width: 380px) { form { flex-direction: column; } }
+  .done { display: none; background: var(--admit-soft); color: var(--ink); border-radius: 10px; padding: 12px 14px; font-size: 15px; }
+  .notify.sent form { display: none; }
+  .notify.sent .done { display: block; }
+  .fine { font-size: 13px; color: var(--ink-2); }
+
+  .by { font-size: 13px; color: var(--ink-2); text-align: center; }
+  .by b { color: var(--ink); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { .live::before { animation: none; } }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="app"><span class="app-mark" aria-hidden="true">🔥</span>Idea Roaster</div>
+
+    <div style="display:grid;gap:8px">
+      <h1>This app is very popular right now</h1>
+      <p class="muted">You're in line and you will get in automatically. Keep this tab open.</p>
+    </div>
+
+    <div class="spot">
+      <div class="spot-row">
+        <span class="spot-k">Your place in line</span>
+        <span class="spot-v">#47</span>
+      </div>
+      <div class="bar" role="progressbar" aria-label="Progress through the line" aria-valuenow="62" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+      <div class="spot-meta">
+        <span>About 2 minutes</span>
+        <span class="live">Checking for a free seat</span>
+      </div>
+    </div>
+
+    <div class="notify" id="notify">
+      <h2>Don't want to wait here?</h2>
+      <p class="muted" style="font-size:15px">Leave your email and we'll tell you the moment you're in.</p>
+      <form id="form">
+        <label for="email" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Email</label>
+        <input id="email" type="email" required placeholder="you@example.com" autocomplete="email" />
+        <button type="submit">Notify me</button>
+      </form>
+      <p class="done" id="done" role="status"></p>
+      <p class="fine">Only used to tell you when you're in. No newsletter.</p>
+    </div>
+
+    <p class="by">Waiting room by <b>Spike Shield</b></p>
+  </main>
+
+  <script>
+    // Sample only: nothing is sent. Shows the confirmation state.
+    document.getElementById("form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var email = document.getElementById("email").value;
+      document.getElementById("done").textContent = "Got it. We'll email " + email + " when it's your turn.";
+      document.getElementById("notify").classList.add("sent");
+    });
+  </script>
+</body>
+</html>
