@@ -86,8 +86,7 @@ Agree on these first, then build independently.
 
 Only after the full demo runs on the demo laptop.
 
-1. Fix prompts and `fix/*` branches (Target side).
-2. Email form on the waiting page, and "you're in" notices when a slot frees up (sent a few at a time, as many as free slots).
-3. Login page for builders, with a site key for the script.
-4. Builder dashboard: active visitors, queue and waitlist.
-5. Threshold suggestion from static analysis of the app's HTML, CSS and JS.
+1. Email form on the waiting page, and "you're in" notices when a slot frees up (sent a few at a time, as many as free slots).
+2. Login page for builders, with a site key for the script.
+3. Builder dashboard: active visitors, queue and waitlist.
+4. Threshold suggestion from static analysis of the app's HTML, CSS and JS.
