@@ -12,6 +12,13 @@ npm install
 if command -v supabase >/dev/null 2>&1; then SUPABASE=supabase; else SUPABASE="npx supabase"; fi
 
 $SUPABASE start
+# After Docker restarts, containers with restart policy "no" (edge_runtime) stay stopped, and
+# `supabase start` sees the stack as running and leaves them. Start any stopped ones.
+STOPPED=$(docker ps -a --filter "name=^supabase_.*_user-side$" --filter status=exited --filter status=created --format '{{.Names}}')
+if [ -n "$STOPPED" ]; then
+  echo "Starting stopped Supabase containers: $STOPPED"
+  docker start $STOPPED >/dev/null
+fi
 $SUPABASE db reset         # schema + seed (100k posts, 500k votes), takes a minute or two
 ./scripts/cap.sh           # resource caps, reset on every restart
 
