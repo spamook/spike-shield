@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { setPageState } from "../lib/pageState";
 import type { Post } from "../types";
 
 export default function Idea() {
@@ -14,6 +15,7 @@ export default function Idea() {
 
   useEffect(() => {
     let cancelled = false;
+    setPageState("loading");
     supabase
       .from("posts")
       .select("*, author:profiles(*)")
@@ -21,8 +23,13 @@ export default function Idea() {
       .single()
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error) setError(error.message);
-        else setPost(data as Post);
+        if (error) {
+          setError(error.message);
+          setPageState("error");
+        } else {
+          setPost(data as Post);
+          setPageState("ready");
+        }
       });
     supabase
       .from("votes")
@@ -45,7 +52,14 @@ export default function Idea() {
     setRoasting(false);
   }
 
-  if (error) return <p className="error">Could not load this idea: {error}</p>;
+  if (error) {
+    return (
+      <div className="error-banner" role="alert">
+        <strong>Something went wrong.</strong> Could not load this idea. Please try again later.{" "}
+        <span className="muted">({error})</span>
+      </div>
+    );
+  }
   if (!post) return <p className="muted">Loading…</p>;
 
   return (

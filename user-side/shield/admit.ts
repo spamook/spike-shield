@@ -3,24 +3,27 @@
 // - Known active session -> update last seen, admitted.
 // - Active count + queued visitors ahead of this one < threshold -> mark active, admitted.
 // - Otherwise -> queued, with position. First come, first served.
-// - Sessions not seen for 30 seconds are dropped (heartbeat every 10 s keeps a slot).
+// - Sessions not seen for 30 seconds are dropped (heartbeat every 10 s keeps a slot);
+//   a visitor who closes the page sends "leave" and is dropped at once.
+// A site starts enabled with the threshold from the THRESHOLD env var (default 10): only the
+// :4174 build loads shield.js, so the Shield can stay on all the time.
 
-type Session = { status: "active" | "queued"; firstSeen: number; lastSeen: number; email?: string };
+type Session = { status: "active" | "queued"; firstSeen: number; lastSeen: number };
 
 type Site = {
   enabled: boolean;
   threshold: number;
   sessions: Map<string, Session>; // insertion order = arrival order
-  notices: string[]; // "you're in" emails we would send
 };
 
 const TTL_MS = 30_000;
+export const DEFAULT_THRESHOLD = Number(process.env.THRESHOLD ?? 10);
 export const sites = new Map<string, Site>();
 
 export function getSite(id: string): Site {
   let site = sites.get(id);
   if (!site) {
-    site = { enabled: false, threshold: 30, sessions: new Map(), notices: [] };
+    site = { enabled: true, threshold: DEFAULT_THRESHOLD, sessions: new Map() };
     sites.set(id, site);
   }
   return site;
@@ -52,15 +55,13 @@ export function admit(siteId: string, sessionId: string, now = Date.now()) {
   // first come, first served: free slots must cover everyone ahead
   if (active + ahead < site.threshold) {
     s.status = "active";
-    if (s.email) site.notices.push(`You're in: ${s.email}`);
     return { status: "admitted" as const };
   }
   return { status: "queued" as const, position: ahead + 1 };
 }
 
-export function saveEmail(siteId: string, sessionId: string, email: string) {
-  const s = getSite(siteId).sessions.get(sessionId);
-  if (s) s.email = email;
+export function leave(siteId: string, sessionId: string) {
+  getSite(siteId).sessions.delete(sessionId);
 }
 
 export function configure(siteId: string, enabled: boolean, threshold: number) {
@@ -72,19 +73,10 @@ export function configure(siteId: string, enabled: boolean, threshold: number) {
 export function stats(siteId: string) {
   const site = getSite(siteId);
   let active = 0,
-    queued = 0,
-    emails = 0;
+    queued = 0;
   for (const s of site.sessions.values()) {
     if (s.status === "active") active++;
     else queued++;
-    if (s.email) emails++;
   }
-  return {
-    enabled: site.enabled,
-    threshold: site.threshold,
-    active,
-    queued,
-    emails,
-    notices: site.notices.slice(-10),
-  };
+  return { enabled: site.enabled, threshold: site.threshold, active, queued };
 }

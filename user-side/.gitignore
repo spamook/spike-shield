@@ -26,3 +26,5 @@ dist-ssr
 # Supabase CLI
 supabase/.temp
 supabase/.branches
+dist-plain
+dist-shield

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { setPageState } from "../lib/pageState";
 import type { Post } from "../types";
 
 const VOTE_COUNT_POSTS = 20;
@@ -14,6 +15,15 @@ export default function Feed() {
 
   useEffect(() => {
     let cancelled = false;
+    setPageState("loading");
+
+    // Any failed Supabase call: visible error message and <body data-state="error">.
+    function fail(message: string) {
+      if (cancelled) return;
+      setError(message);
+      setLoading(false);
+      setPageState("error");
+    }
 
     async function load() {
       // Weak point 1: heavy feed query. 200 posts at once, select * (includes the long body),
@@ -24,24 +34,23 @@ export default function Feed() {
         .order("created_at", { ascending: false })
         .limit(200);
       if (cancelled) return;
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
-      }
+      if (error) return fail(error.message);
       const list = (data ?? []) as Post[];
       setPosts(list);
       setLoading(false);
+      setPageState("ready");
 
-      // Weak point 2: N+1 vote counts. One request per post; votes.post_id has no index,
-      // so every count scans the whole votes table.
+      // Weak point 2: N+1 vote counts. One request per post, all at the same moment;
+      // votes.post_id has no index, so every count scans the whole votes table.
       for (const post of list.slice(0, VOTE_COUNT_POSTS)) {
         supabase
           .from("votes")
           .select("*", { count: "exact", head: true })
           .eq("post_id", post.id)
-          .then(({ count }) => {
-            if (!cancelled) setVotes((v) => ({ ...v, [post.id]: count ?? 0 }));
+          .then(({ count, error }) => {
+            if (cancelled) return;
+            if (error) return fail(error.message);
+            setVotes((v) => ({ ...v, [post.id]: count ?? 0 }));
           });
       }
 
@@ -53,7 +62,8 @@ export default function Feed() {
           .invoke("ai-summary", { body: { post_id: ideaOfTheDay.id } })
           .then(({ data, error }) => {
             if (cancelled) return;
-            setRoast(error ? "The roaster is busy. Try again later." : (data?.roast ?? null));
+            if (error) return fail(error.message);
+            setRoast(data?.roast ?? null);
           });
       }
     }
@@ -65,12 +75,18 @@ export default function Feed() {
   }, []);
 
   if (loading) return <p className="muted">Loading ideas…</p>;
-  if (error) return <p className="error">Could not load the feed: {error}</p>;
 
   const ideaOfTheDay = posts[0];
 
   return (
     <>
+      {error && (
+        <div className="error-banner" role="alert">
+          <strong>Something went wrong.</strong> The app could not load its data. Please try again
+          later. <span className="muted">({error})</span>
+        </div>
+      )}
+
       {ideaOfTheDay && (
         <section className="card highlight">
           <h2 className="label">Idea of the day</h2>
@@ -82,7 +98,7 @@ export default function Feed() {
         </section>
       )}
 
-      <h2>Latest ideas</h2>
+      {posts.length > 0 && <h2>Latest ideas</h2>}
       <ul className="feed">
         {posts.map((post) => (
           <li key={post.id} className="card">
