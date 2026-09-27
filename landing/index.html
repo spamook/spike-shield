@@ -229,7 +229,7 @@
     <div class="stack">
       <p class="eyebrow">For vibe-coded apps on Supabase</p>
       <h1>Go viral without going down.</h1>
-      <p class="lede">One script gives your app a waiting room. When the buzz hits, extra visitors wait in line for a minute instead of taking your database down with them.</p>
+      <p class="lede">The day your app takes off is the day you can lose every new customer at once: they open it, see an error, and never come back. Spike Shield keeps them. One script gives your app a waiting room, so extra visitors wait a minute and get in, instead of taking your database down and leaving for good.</p>
       <div class="hero-ctas">
         <a class="btn btn-primary" href="#install">Install with one prompt</a>
         <a class="btn btn-ghost" href="01-check.html">Walk through the demo</a>
@@ -241,10 +241,6 @@
       <div class="demo-head">
         <p class="eyebrow">Launch day, minute by minute</p>
         <button class="replay" id="replayBtn" type="button">Replay</button>
-      </div>
-      <div class="slider-row">
-        <label><span>People on your app right now <span class="muted">(the internet decides this, not you)</span></span><b class="num" id="visitorsOut">20</b></label>
-        <div class="timeline" aria-hidden="true"><i id="timeFill"></i></div>
       </div>
       <div class="slider-row">
         <label for="thrSlider"><span>Your threshold: how many you let in at once <span class="muted">(the database breaks at about 150)</span></span><b class="num" id="thrOut">120</b></label>
@@ -544,7 +540,7 @@
     var admitted = Math.min(v, THRESHOLD);
     var queued = Math.max(0, v - THRESHOLD);
     var load = Math.round((admitted / BREAK) * 100);
-    out.textContent = v;
+    if (out) out.textContent = v;
     inApp.textContent = admitted;
     inLine.textContent = queued;
     dbLoad.textContent = load + "%";
