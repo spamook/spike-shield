@@ -126,6 +126,10 @@
   .slider-row { display: grid; gap: 6px; }
   .slider-row label { display: flex; justify-content: space-between; font-size: 14px; font-weight: 500; }
   .slider { width: 100%; accent-color: var(--ink); }
+  .timeline { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-top: 6px; }
+  .timeline i { display: block; height: 100%; width: 0; background: var(--ink-2); transition: width 500ms linear; }
+  .replay { font: inherit; font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+  .replay:hover { background: var(--surface-2); }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .stat { border-radius: 10px; padding: 10px 12px; background: var(--surface-2); display: grid; gap: 2px; }
   .stat .k { font-size: 12px; color: var(--ink-2); font-weight: 500; }
@@ -212,6 +216,7 @@
   <header class="top">
     <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Spike Shield</a>
     <nav class="links" aria-label="Sections">
+      <a href="#what">What it is</a>
       <a href="#how">How it works</a>
       <a href="#install">Install</a>
       <a href="#pricing">Pricing</a>
@@ -234,15 +239,15 @@
 
     <div class="demo" aria-label="Interactive demo of the Shield during a spike">
       <div class="demo-head">
-        <p class="eyebrow">Launch day</p>
-        <p class="muted num" style="font-size:13px">Your database breaks at about <b>150</b> people at once</p>
+        <p class="eyebrow">Launch day, minute by minute</p>
+        <button class="replay" id="replayBtn" type="button">Replay</button>
       </div>
       <div class="slider-row">
-        <label for="visitors"><span>People on your app at the same time</span><b class="num" id="visitorsOut">180</b></label>
-        <input class="slider" type="range" id="visitors" min="0" max="500" value="180" step="5" />
+        <label><span>People on your app right now <span class="muted">(the internet decides this, not you)</span></span><b class="num" id="visitorsOut">20</b></label>
+        <div class="timeline" aria-hidden="true"><i id="timeFill"></i></div>
       </div>
       <div class="slider-row">
-        <label for="thrSlider"><span>Threshold: how many you let into the app at once</span><b class="num" id="thrOut">120</b></label>
+        <label for="thrSlider"><span>Your threshold: how many you let in at once <span class="muted">(the database breaks at about 150)</span></span><b class="num" id="thrOut">120</b></label>
         <input class="slider" type="range" id="thrSlider" min="20" max="400" value="120" step="5" />
       </div>
       <div class="stats">
@@ -262,6 +267,31 @@
         <span id="waitBody">You're number <b class="num">60</b> in line. Keep this tab open, we'll let you in automatically.</span>
         <small id="waitNote">What visitor 121 sees. The database never hears from them.</small>
       </div>
+    </div>
+  </section>
+
+  <section id="what">
+    <div class="stack" style="gap:28px">
+      <p class="eyebrow">What Spike Shield is</p>
+      <p class="thesis">A waiting room for small apps built with AI tools. It sits between your visitors and your database, and only lets in as many people as the database can handle.</p>
+      <div class="cards">
+        <div class="card">
+          <span class="tag ok">The script</span>
+          <h3>One line in your app</h3>
+          <p class="muted">A tiny script that loads before your app does. It asks our service whether this visitor can come in, and either starts the app or shows a waiting page. No backend changes, no SDK, no config in Supabase.</p>
+        </div>
+        <div class="card">
+          <span class="tag ok">The queue</span>
+          <h3>A counter that lives outside your stack</h3>
+          <p class="muted">Our service counts who is active in your app right now. Above your threshold, new visitors wait in line and get in automatically as slots free up. It keeps counting while your database is having its worst day.</p>
+        </div>
+        <div class="card">
+          <span class="tag ok">The dashboard</span>
+          <h3>See the buzz as it happens</h3>
+          <p class="muted">Active visitors, the length of the line, the emails people left while waiting, and an alert the moment a spike starts. Turn the Shield on or off and set the threshold from one page.</p>
+        </div>
+      </div>
+      <p class="muted" style="max-width:52em">Built for people who ship an app in an afternoon with an AI coding tool, put it on Supabase, and post it somewhere. Not for engineers with a load balancer and an on-call rotation; they already have tools for this.</p>
     </div>
   </section>
 
@@ -414,9 +444,12 @@
 <script>
 (function () {
   var BREAK = 150; // where this app's database breaks (what the check measures)
+  var PEAK = 320;  // how big this launch day gets; the internet decides, not the builder
+  var STEP_MS = 650;
   var THRESHOLD = 120;
-  var slider = document.getElementById("visitors");
   var thrSlider = document.getElementById("thrSlider");
+  var replayBtn = document.getElementById("replayBtn");
+  var timeFill = document.getElementById("timeFill");
   var thrOut = document.getElementById("thrOut");
   var out = document.getElementById("visitorsOut");
   var inApp = document.getElementById("inApp");
@@ -434,7 +467,11 @@
 
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
-  function draw(peak) {
+  var idx = 0;       // where we are in the day
+  var timer = null;
+  function visitorsAt(i) { return Math.round((shape[i] / 130) * PEAK); }
+
+  function draw() {
     var dpr = window.devicePixelRatio || 1;
     var w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return;
@@ -443,37 +480,41 @@
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
     var padL = 6, padR = 6, padT = 8, padB = 6;
-    var maxY = Math.max(peak, THRESHOLD, BREAK) * 1.15;
+    var maxY = Math.max(PEAK, THRESHOLD, BREAK) * 1.15;
     var scaleX = (w - padL - padR) / (shape.length - 1);
     var scaleY = (h - padT - padB) / maxY;
-    var pts = shape.map(function (s, i) { return [padL + i * scaleX, h - padB - (s / 130) * peak * scaleY]; });
+    var pts = shape.map(function (s, i) { return [padL + i * scaleX, h - padB - visitorsAt(i) * scaleY]; });
+    var past = pts.slice(0, idx + 1);
     var thrY = h - padB - THRESHOLD * scaleY;
     var breakY = h - padB - BREAK * scaleY;
 
-    // admitted area (below the threshold line)
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], h - padB);
-    pts.forEach(function (p) { ctx.lineTo(p[0], Math.max(p[1], thrY)); });
-    ctx.lineTo(pts[pts.length - 1][0], h - padB);
-    ctx.closePath();
-    ctx.fillStyle = css("--admit-soft"); ctx.fill();
-
-    // queued area (above the threshold line)
-    ctx.beginPath();
-    var started = false;
-    pts.forEach(function (p) {
-      var y = Math.min(p[1], thrY);
-      if (!started) { ctx.moveTo(p[0], thrY); started = true; }
-      ctx.lineTo(p[0], y);
-    });
-    ctx.lineTo(pts[pts.length - 1][0], thrY);
-    ctx.closePath();
-    ctx.fillStyle = css("--queue-soft"); ctx.fill();
-
-    // curve
+    // the rest of the day, faint: what is still to come
     ctx.beginPath();
     pts.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
-    ctx.lineWidth = 2; ctx.strokeStyle = css("--admit"); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = css("--line"); ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+
+    if (past.length > 1) {
+      // admitted area (below the threshold line), so far
+      ctx.beginPath();
+      ctx.moveTo(past[0][0], h - padB);
+      past.forEach(function (p) { ctx.lineTo(p[0], Math.max(p[1], thrY)); });
+      ctx.lineTo(past[past.length - 1][0], h - padB);
+      ctx.closePath();
+      ctx.fillStyle = css("--admit-soft"); ctx.fill();
+
+      // queued area (above the threshold line), so far
+      ctx.beginPath();
+      ctx.moveTo(past[0][0], thrY);
+      past.forEach(function (p) { ctx.lineTo(p[0], Math.min(p[1], thrY)); });
+      ctx.lineTo(past[past.length - 1][0], thrY);
+      ctx.closePath();
+      ctx.fillStyle = css("--queue-soft"); ctx.fill();
+
+      // curve so far
+      ctx.beginPath();
+      past.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+      ctx.lineWidth = 2; ctx.strokeStyle = css("--admit"); ctx.stroke();
+    }
 
     // where the database breaks (red, dotted) and your threshold (dashed)
     ctx.setLineDash([2, 4]);
@@ -484,18 +525,21 @@
     ctx.lineWidth = 1.5; ctx.strokeStyle = css("--ink-2"); ctx.stroke();
     ctx.setLineDash([]);
 
-    // "now" marker at the peak of the day, labelled
-    var peakI = shape.indexOf(130);
-    var over = Math.min(peak, THRESHOLD) > BREAK;
-    ctx.beginPath(); ctx.arc(pts[peakI][0], pts[peakI][1], 4, 0, Math.PI * 2);
-    ctx.fillStyle = over ? css("--down") : peak > THRESHOLD ? css("--queue") : css("--admit"); ctx.fill();
-    ctx.font = "11px 'Instrument Sans', sans-serif"; ctx.fillStyle = css("--ink-2"); ctx.textAlign = "left";
-    ctx.fillText("peak: " + peak + " people", pts[peakI][0] + 8, Math.max(pts[peakI][1] - 6, 10));
+    // "now" marker
+    var v = visitorsAt(idx);
+    var over = Math.min(v, THRESHOLD) > BREAK;
+    var now = pts[idx];
+    ctx.beginPath(); ctx.arc(now[0], now[1], 4, 0, Math.PI * 2);
+    ctx.fillStyle = over ? css("--down") : v > THRESHOLD ? css("--queue") : css("--admit"); ctx.fill();
+    ctx.font = "11px 'Instrument Sans', sans-serif"; ctx.fillStyle = css("--ink-2");
+    ctx.textAlign = idx > shape.length * 0.7 ? "right" : "left";
+    ctx.fillText("now: " + v, now[0] + (idx > shape.length * 0.7 ? -8 : 8), Math.max(now[1] - 6, 10));
   }
 
   function update() {
-    var v = Number(slider.value);
+    var v = visitorsAt(idx);
     THRESHOLD = Number(thrSlider.value);
+    if (timeFill) timeFill.style.width = Math.round((idx / (shape.length - 1)) * 100) + "%";
     thrOut.textContent = THRESHOLD;
     var admitted = Math.min(v, THRESHOLD);
     var queued = Math.max(0, v - THRESHOLD);
@@ -519,19 +563,30 @@
       waiting.className = "waiting off";
       waitTitle.textContent = "Everyone is in";
       waitBody.textContent = "Under the threshold the Shield does nothing. The app starts the moment the page loads.";
-      waitNote.textContent = v === 0 ? "A quiet day." : "Database at " + load + "% of what it can take, no one waiting.";
+      waitNote.textContent = v <= 25 ? "Quiet for now. The day is not over." : "Database at " + load + "% of what it can take, no one waiting.";
     }
-    draw(v);
+    draw();
   }
 
-  slider.addEventListener("input", update);
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function playDay() {
+    clearInterval(timer);
+    idx = 0; update();
+    if (reduced) { idx = shape.indexOf(130); update(); return; } // no animation: show the peak of the day
+    timer = setInterval(function () {
+      idx++;
+      if (idx >= shape.length - 1) { idx = shape.length - 1; update(); clearInterval(timer); timer = setTimeout(playDay, 3000); return; }
+      update();
+    }, STEP_MS);
+  }
+  replayBtn.addEventListener("click", playDay);
   thrSlider.addEventListener("input", update);
-  window.addEventListener("resize", function () { draw(Number(slider.value)); });
+  window.addEventListener("resize", draw);
   if (window.matchMedia) {
     var mq = window.matchMedia("(prefers-color-scheme: dark)");
-    if (mq.addEventListener) mq.addEventListener("change", function () { draw(Number(slider.value)); });
+    if (mq.addEventListener) mq.addEventListener("change", draw);
   }
-  update();
+  playDay();
 
   var copyBtn = document.getElementById("copyBtn");
   var promptText = document.getElementById("promptText");
