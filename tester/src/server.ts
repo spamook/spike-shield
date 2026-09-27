@@ -23,6 +23,11 @@ const RAMP_S = Number(process.env.RAMP_S ?? 20);
 // After the ramp, a run holds its target until POST /api/runs/stop. MAX_RUN_S is a
 // safety net: the whole run (ramp + hold) auto-stops after this many seconds.
 const MAX_RUN_S = Number(process.env.MAX_RUN_S ?? 300);
+// After a run ends, the backend needs a moment to work off what the spike left behind; a run
+// started right away fails for reasons that have nothing to do with it. Block Run meanwhile.
+const COOLDOWN_S = Number(process.env.COOLDOWN_S ?? 20);
+let cooldownUntil = 0; // Date.now() ms
+const cooldownLeft = () => Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
 // The last DRAIN_S seconds start no new visitors: a visitor waits up to 20 s in the
 // queue and requests right after it gets in, so 30 s lets the last requests finish.
 const DRAIN_S = Number(process.env.DRAIN_S ?? 30);
@@ -81,6 +86,10 @@ app.post("/api/runs", (req, res) => {
     res.status(409).json({ error: "a run is already in progress" });
     return;
   }
+  if (cooldownLeft() > 0) {
+    res.status(409).json({ error: "backend is recovering", retryInS: cooldownLeft() });
+    return;
+  }
 
   const cappedUsers = Math.max(0, Math.min(Math.floor(Number(users) || 0), MAX_VISITORS));
   const id = randomUUID();
@@ -126,6 +135,7 @@ app.post("/api/runs", (req, res) => {
     .finally(() => {
       clearTimeout(maxRunTimer);
       if (currentRun?.id === id) currentRun = null;
+      cooldownUntil = Date.now() + COOLDOWN_S * 1000;
     });
 
   res.json({ id });
@@ -185,9 +195,9 @@ setInterval(() => {
           elapsed,
           totals,
           users: { started: currentRun.started, affected: currentRun.metrics.usersAffected() },
-        }, shield });
+        }, shield, cooldown: 0 });
     } else {
-      broadcast({ type: "tick", t: idleT++, run: null, shield });
+      broadcast({ type: "tick", t: idleT++, run: null, shield, cooldown: cooldownLeft() });
     }
   })();
 }, 1000);

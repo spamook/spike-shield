@@ -19,7 +19,7 @@ import {
 type ModeRunStats = { failed: number; elapsedS: number };
 
 function App() {
-  const { connected, ticksByMode, shield, runningMode, summaries, resetCount } = useLive();
+  const { connected, ticksByMode, shield, runningMode, summaries, resetCount, cooldown } = useLive();
   const [users, setUsers] = useState(DEFAULT_USERS);
   const [message, setMessage] = useState<string | null>(null);
   // Per-mode failed count + stopwatch, for the whole run (not just the buffered chart
@@ -214,6 +214,8 @@ function App() {
   }
 
   const running = runningMode !== null;
+  // Right after a run the backend is still working off the spike; Run waits until it has recovered.
+  const recovering = !running && cooldown > 0;
 
   return (
     <div className="dashboard">
@@ -234,11 +236,11 @@ function App() {
               onChange={(e) => setUsers(clampUsers(e.target.valueAsNumber))}
             />
           </label>
-          <button type="button" className="btn btn-primary" disabled={running} onClick={() => startRun("without")}>
-            ▶ Run without Shield
+          <button type="button" className="btn btn-primary" disabled={running || recovering} onClick={() => startRun("without")}>
+            {recovering ? `Recovering ${cooldown}s` : "▶ Run without Shield"}
           </button>
-          <button type="button" className="btn btn-primary" disabled={running} onClick={() => startRun("with")}>
-            ▶ Run with Shield
+          <button type="button" className="btn btn-primary" disabled={running || recovering} onClick={() => startRun("with")}>
+            {recovering ? `Recovering ${cooldown}s` : "▶ Run with Shield"}
           </button>
           <button type="button" className="btn btn-danger" disabled={!running} onClick={stopRun}>
             ■ Stop

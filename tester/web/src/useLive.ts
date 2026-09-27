@@ -20,6 +20,8 @@ export type LiveState = {
   summaries: Summaries;
   /** Increments on each server reset. */
   resetCount: number;
+  /** Seconds until Run is allowed again after a run (backend recovering). */
+  cooldown: number;
 };
 
 const EMPTY_BUFFERS: TickBuffers = { without: [], with: [] };
@@ -28,6 +30,7 @@ export function useLive(): LiveState {
   const [connected, setConnected] = useState(false);
   const [ticksByMode, setTicksByMode] = useState<TickBuffers>(EMPTY_BUFFERS);
   const [shield, setShield] = useState<ShieldStats | null>(null);
+  const [cooldown, setCooldown] = useState(0);
   const [runningMode, setRunningMode] = useState<Mode | null>(null);
   const [summaries, setSummaries] = useState<Summaries>({ without: null, with: null });
   // Bumped on each "reset" message, so the page can clear its own per-mode state too.
@@ -80,6 +83,7 @@ export function useLive(): LiveState {
 
         if (msg.type === "tick") {
           setShield(msg.shield);
+          setCooldown(msg.cooldown ?? 0);
           setRunningMode(msg.run?.mode ?? null);
           const newRun = msg.run !== null && msg.run.mode !== prevRunMode;
           prevRunMode = msg.run?.mode ?? null;
@@ -118,5 +122,5 @@ export function useLive(): LiveState {
     };
   }, []);
 
-  return { connected, ticksByMode, shield, runningMode, summaries, resetCount };
+  return { connected, ticksByMode, shield, runningMode, summaries, resetCount, cooldown };
 }

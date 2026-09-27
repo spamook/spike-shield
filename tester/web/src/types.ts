@@ -52,6 +52,7 @@ export type TickMessage = {
   t: number;
   run: RunTick | null;
   shield: ShieldStats | null;
+  cooldown: number; // seconds until a new run may start (backend recovering), 0 = ready
 };
 
 export type SummaryMessage = {
