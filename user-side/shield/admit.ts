@@ -20,19 +20,24 @@ export const sites = new Map<string, Site>();
 export function getSite(id: string): Site {
   let site = sites.get(id);
   if (!site) {
-    site = { enabled: false, threshold: 30, sessions: new Map(), notices: [] };
+    // Starts enabled with the threshold from THRESHOLD (default 10), as start.sh expects.
+    site = { enabled: true, threshold: Number(process.env.THRESHOLD ?? 10), sessions: new Map(), notices: [] };
     sites.set(id, site);
   }
   return site;
+}
+
+function dropExpired(site: Site, now: number) {
+  for (const [id, s] of site.sessions) {
+    if (now - s.lastSeen > TTL_MS) site.sessions.delete(id);
+  }
 }
 
 export function admit(siteId: string, sessionId: string, now = Date.now()) {
   const site = getSite(siteId);
   if (!site.enabled) return { status: "admitted" as const };
 
-  for (const [id, s] of site.sessions) {
-    if (now - s.lastSeen > TTL_MS) site.sessions.delete(id);
-  }
+  dropExpired(site, now);
 
   let s = site.sessions.get(sessionId);
   if (!s) {
@@ -58,6 +63,11 @@ export function admit(siteId: string, sessionId: string, now = Date.now()) {
   return { status: "queued" as const, position: ahead + 1 };
 }
 
+// The visitor closed the page: free its slot or place in line at once, not after the TTL.
+export function leave(siteId: string, sessionId: string) {
+  getSite(siteId).sessions.delete(sessionId);
+}
+
 export function saveEmail(siteId: string, sessionId: string, email: string) {
   const s = getSite(siteId).sessions.get(sessionId);
   if (s) s.email = email;
@@ -71,6 +81,7 @@ export function configure(siteId: string, enabled: boolean, threshold: number) {
 
 export function stats(siteId: string) {
   const site = getSite(siteId);
+  dropExpired(site, Date.now()); // don't count visitors who stopped sending heartbeats
   let active = 0,
     queued = 0,
     emails = 0;

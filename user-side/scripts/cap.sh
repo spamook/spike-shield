@@ -19,6 +19,6 @@ cap() {  # cap <container prefix> <cpus> <memory>
   echo "cap.sh: $name -> cpus=$2 memory=$3"
 }
 
-cap supabase_db           1    1g
+cap supabase_db           0.75 768m
 cap supabase_rest         0.5  512m
 cap supabase_edge_runtime 0.5  512m

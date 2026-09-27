@@ -11,7 +11,8 @@
  * 2. Admitted: lets the app start, then sends a heartbeat every 10 seconds.
  * 3. Queued: shows a full-screen waiting page with the position and an email form, retries
  *    every 5 seconds, and lets the app start once admitted.
- * 4. Service unreachable or slower than 2 seconds: lets the app start (fail open).
+ * 4. On pagehide: tells the service the visitor left (POST /shield/leave), so the slot frees at once.
+ * 5. Service unreachable or slower than 2 seconds: lets the app start (fail open).
  *
  * The app's own code never runs for a queued visitor, so its database never sees them.
  */
@@ -91,6 +92,12 @@
       setTimeout(check, RETRY_MS);
     });
   }
+
+  // Leaving frees the slot at once instead of after 30 seconds.
+  // A plain string is sent as text/plain, which needs no CORS preflight.
+  window.addEventListener("pagehide", function () {
+    navigator.sendBeacon(api + "/shield/leave", JSON.stringify({ siteId: site, sessionId: sessionId }));
+  });
 
   // Waiting page: inline styles only, no requests except our API.
   var page;

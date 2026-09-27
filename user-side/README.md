@@ -27,11 +27,13 @@ Prerequisites: Node 20+, Docker Desktop running, git. The Supabase CLI is a dev 
 
 It runs `npm install`, `supabase start`, `supabase db reset` (schema + seed, a minute or two),
 `scripts/cap.sh`, writes `.env` from the running instance, starts the Shield service in the
-background, builds and serves the app. Ctrl+C stops the app and the Shield service.
+background, then builds and serves the app twice: without the Shield and with it. Ctrl+C stops
+both apps and the Shield service.
 
 | Service | URL |
 |---|---|
-| Fake App (`vite preview`) | http://localhost:4173 |
+| Fake App without the Shield (`vite preview`) | http://localhost:4173 |
+| Fake App with the Shield (`vite preview`) | http://localhost:4174 |
 | Shield service (`shield.js`, admit, waitlist, config, stats) | http://localhost:8090 |
 | Supabase API (REST, RPC, Edge Functions) | http://localhost:54321 |
 | Supabase Studio | http://localhost:54323 |
@@ -86,7 +88,7 @@ This is the source for `service-side/journeys/idea-roaster.json`.
 | # | Call | Notes |
 |---|---|---|
 | 1 | `GET http://localhost:4173/` | the page, then its JS and CSS from the same origin |
-| 2 | `POST http://localhost:8090/shield/admit` | `shield` branch only, before anything else; body `{"siteId":"idea-roaster","sessionId":"<uuid>"}` |
+| 2 | `POST http://localhost:8090/shield/admit` | `:4174` build only, before anything else; body `{"siteId":"idea-roaster","sessionId":"<uuid>"}` |
 | 3 | `GET /rest/v1/posts?select=*,author:profiles(*)&order=created_at.desc&limit=200` | ~300 KB response |
 | 4 | `HEAD /rest/v1/votes?select=*&post_id=eq.<id>` × 20 | **all 20 at the same moment**, right after step 3 answers; header `Prefer: count=exact`, count comes back in `Content-Range` |
 | 5 | `POST /functions/v1/ai-summary` | **at the same moment as step 4**; body `{"post_id":<id of the newest post>}`, ~2 s |
@@ -146,9 +148,10 @@ With threshold 2, the third new session is queued.
 
 ## Branches
 
-- `shield`: the Shield installed with the install prompt (script tag in `index.html`, `main.tsx`
-  waits for `window.SpikeShield.ready`). The script itself is `shield/public/shield.js`, served
-  by the Shield service at `http://localhost:8090/shield.js`.
+- The Shield install (script tag inserted by the `spike-shield` Vite plugin, `main.tsx` waiting on
+  `window.SpikeShield.ready`) is on `main`, toggled by the `SHIELD` build flag in
+  `vite.config.ts`, not on a separate branch. The script itself is `shield/public/shield.js`,
+  served by the Shield service at `http://localhost:8090/shield.js`.
 - `fix/feed`, `fix/votes`, `fix/ai`: each one applies one fix prompt from the spec and adds a
   migration. Switch with `git checkout <branch>`, then `npm run build` and, for the fix branches,
   `npx supabase db reset` to apply the new migration.

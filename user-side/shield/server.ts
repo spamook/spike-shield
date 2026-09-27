@@ -4,19 +4,21 @@
 //
 //   GET  /shield.js                 Fake App          static file from public/
 //   POST /shield/admit              shield.js, replay { siteId, sessionId } -> { status, position? }
-//   POST /shield/waitlist           shield.js         { siteId, sessionId, email } -> 204
+//   POST /shield/leave              shield.js         { siteId, sessionId } (text/plain, sendBeacon) -> 204
+//   POST /shield/waitlist          shield.js         { siteId, sessionId, email } -> 204
 //   PUT  /shield/config             Tester Backend    { siteId, enabled, threshold } -> 204
 //   GET  /shield/stats?siteId=...   Tester Backend    { enabled, threshold, active, queued, emails, notices }
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { admit, configure, saveEmail, stats } from "./admit.ts";
+import { admit, configure, leave, saveEmail, stats } from "./admit.ts";
 
 const PORT = Number(process.env.PORT ?? 8090);
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
-app.use(express.json());
+// /shield/leave comes from sendBeacon as text/plain (no CORS preflight), so parse both types.
+app.use(express.json({ type: ["application/json", "text/plain"] }));
 
 // CORS on all routes: the Fake App runs on :4173 and the Backend on :8080.
 app.use((req, res, next) => {
@@ -35,6 +37,15 @@ app.post("/shield/admit", (req, res) => {
     return res.status(400).json({ error: "siteId and sessionId required" });
   }
   res.json(admit(siteId, sessionId));
+});
+
+app.post("/shield/leave", (req, res) => {
+  const { siteId, sessionId } = req.body ?? {};
+  if (typeof siteId !== "string" || typeof sessionId !== "string") {
+    return res.status(400).json({ error: "siteId and sessionId required" });
+  }
+  leave(siteId, sessionId);
+  res.sendStatus(204);
 });
 
 app.post("/shield/waitlist", (req, res) => {
