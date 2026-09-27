@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Spike Shield · 5 Back to quiet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body data-step="5">
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><h1>Spike Shield</h1></a>
+    <div class="site"><span class="muted">Site</span><code>idea-roaster</code><span class="pill off" id="appPill"><i></i>Quiet</span></div>
+    <span class="pill warn">Simulated for the pitch</span>
+  </header>
+
+  <div class="stephead">
+    <nav class="steps" aria-label="Demo steps">
+      <a class="step done" href="01-check.html"><b>1</b>Check</a><a class="step done" href="02-spike.html"><b>2</b>Spike</a><a class="step done" href="03-install.html"><b>3</b>Install + Shield on</a><a class="step done" href="04-queue.html"><b>4</b>Queue</a><a class="step now" href="05-quiet.html"><b>5</b>Back to quiet</a><a class="step" href="06-recheck.html"><b>6</b>Re-check</a>
+    </nav>
+    <h2>Step 5 · Back to quiet</h2>
+    <p class="say"><b>On stage:</b> set traffic back to Quiet. The queue drains and "you're in" notices go out to everyone who left an email.</p>
+    <p class="hint" id="caption">The spike is passing. Traffic drops to Quiet in a moment.</p>
+  </div>
+
+  <div class="grid three">
+    <div class="col">
+      <section class="card panel">
+        <div class="card-head"><h2>Demo panel</h2></div>
+        <div class="presets" id="presets">
+          <button class="preset" data-target="20" type="button">Quiet<small>20 visitors</small></button>
+          <button class="preset on" data-target="300" type="button">Launch<small>300 visitors</small></button>
+          <button class="preset" data-target="500" type="button">Viral<small>500 visitors</small></button>
+        </div>
+        <div class="app-health">
+          <div><span class="muted">App health</span><b id="hHealth">Healthy</b></div>
+          <div><span class="muted">Error rate</span><b class="num" id="hErr">0%</b></div>
+          <div><span class="muted">p95</span><b class="num" id="hP95">420 ms</b></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Shield</h2><span class="pill ok" id="shieldPill"><i></i>On · threshold 20</span></div>
+        <p class="hint">Stays on. When the line is empty it does nothing, so there is no reason to turn it off after launch day.</p>
+      </section>
+    </div>
+    <div class="col col-mid">
+      <section class="card">
+        <div class="card-head"><h2>Live</h2><span class="muted num" style="font-size:13px" id="clock">00:00</span></div>
+        <div class="stats">
+          <div class="stat admit"><span class="k">Active in the app</span><span class="v num" id="sActive">20</span></div>
+          <div class="stat queue"><span class="k">In line</span><span class="v num" id="sQueued">280</span></div>
+          <div class="stat" id="sErrBox"><span class="k">Failed requests</span><span class="v num" id="sErr">0%</span></div>
+          <div class="stat"><span class="k">Emails captured</span><span class="v num" id="sEmails">0</span></div>
+        </div>
+        <canvas class="chart" id="chart" width="1200" height="520" role="img" aria-label="The queue draining as traffic returns to quiet"></canvas>
+        <div class="legend"><span><i style="background:var(--admit)"></i>Active in the app</span><span><i style="background:var(--queue)"></i>In line</span><span><i style="background:var(--down)"></i>Failed requests</span><span><i style="background:var(--ink-2)"></i>Threshold</span></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="card">
+        <div class="card-head"><h2>Emails captured</h2><span class="count num" id="emailCount">0</span></div>
+        <div class="list" id="emails"><span class="empty">Nobody in line yet.</span></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>"You're in" notices</h2><span class="count num" id="noticeCount">0</span></div>
+        <div class="list" id="notices"><span class="empty">Sent when a slot frees up for someone who left an email.</span></div>
+      </section>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a class="btn" href="04-queue.html">← Step 4</a>
+    <span class="spacer"></span>
+    <button class="btn" id="replayBtn" type="button">Replay</button>
+    <a class="btn btn-primary" href="06-recheck.html">Next: re-check →</a>
+  </nav>
+</div>
+<script src="sim.js"></script>
+</body>
+</html>

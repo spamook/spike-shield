@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Spike Shield</title>
-<meta name="description" content="A waiting room for your Lovable app. One script keeps your Supabase alive on launch day." />
+<meta name="description" content="A waiting room for your vibe-coded app. One script keeps your Supabase alive on launch day." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <style>
@@ -213,18 +213,19 @@
       <a href="#how">How it works</a>
       <a href="#install">Install</a>
       <a href="#pricing">Pricing</a>
+      <a href="01-check.html">Demo</a>
     </nav>
     <a class="btn btn-ghost" href="#install">Add the Shield</a>
   </header>
 
   <section class="hero" id="top">
     <div class="stack">
-      <p class="eyebrow">For Lovable + Supabase apps</p>
+      <p class="eyebrow">For vibe-coded apps on Supabase</p>
       <h1>Go viral without going down.</h1>
       <p class="lede">One script gives your app a waiting room. When the buzz hits, extra visitors wait in line for a minute instead of taking your database down with them.</p>
       <div class="hero-ctas">
         <a class="btn btn-primary" href="#install">Install with one prompt</a>
-        <a class="btn btn-ghost" href="#how">See how it works</a>
+        <a class="btn btn-ghost" href="01-check.html">Walk through the demo</a>
       </div>
       <p class="hero-note">Free for the queue and the alerts. No infrastructure to learn, nothing to configure in Supabase.</p>
     </div>
@@ -319,16 +320,16 @@
     <div class="install">
       <div class="stack">
         <p class="eyebrow">Install</p>
-        <h2>One prompt in Lovable.</h2>
+        <h2>One prompt in your AI coding tool.</h2>
         <p class="lede">The prompt makes two changes to your app. That is the whole install.</p>
         <div class="changes">
           <div class="change"><span class="n">1</span><p>A script tag in <code>index.html</code>, first in <code>&lt;head&gt;</code>, so it runs before your bundle.</p></div>
           <div class="change"><span class="n">2</span><p>In <code>src/main.tsx</code>, the app waits for <code>window.SpikeShield?.ready</code> before it renders. Without the script that promise resolves at once.</p></div>
         </div>
-        <p class="muted" style="font-size:15px">Works with any Vite + React app that talks to Supabase from the browser, not only Lovable.</p>
+        <p class="muted" style="font-size:15px">Works with any static frontend that talks to Supabase from the browser: React with Vite or Parcel, whatever your tool ships.</p>
       </div>
       <div class="prompt">
-        <div class="label"><span>Paste into Lovable</span><button class="copy" id="copyBtn" type="button">Copy prompt</button></div>
+        <div class="label"><span>Paste into your AI coding tool</span><button class="copy" id="copyBtn" type="button">Copy prompt</button></div>
         <code id="promptText">Add Spike Shield to this app. In index.html, inside &lt;head&gt; and before any other script, add &lt;script src="https://cdn.spikeshield.app/shield.js" data-site="YOUR-SITE-ID" data-api="https://api.spikeshield.app"&gt;&lt;/script&gt; without async or defer. In src/main.tsx, wait for window.SpikeShield?.ready (use Promise.resolve() if it is undefined) before calling createRoot().render.</code>
       </div>
     </div>
@@ -392,13 +393,13 @@
       <h2>Add the Shield today. Forget about it until launch day.</h2>
       <div class="hero-ctas">
         <a class="btn btn-primary" href="#install">Install with one prompt</a>
-        <a class="btn btn-ghost" href="https://github.com/spamook/spike-shield">See the demo on GitHub</a>
+        <a class="btn btn-ghost" href="01-check.html">Walk through the demo</a>
       </div>
     </div>
   </section>
 
   <footer>
-    <span>Spike Shield · a hackathon build, demoed on a Lovable-style app with a capped Supabase</span>
+    <span>Spike Shield · a hackathon build, demoed on a vibe-coded app with a capped Supabase</span>
     <span>Queue outside your database · fail open · one prompt to install</span>
   </footer>
 </div>
